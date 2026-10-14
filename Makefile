@@ -26,5 +26,5 @@ fmt: ## Auto-fix lint issues and format
 test: ## Run pytest across the workspace
 	uv run pytest
 
-schemas: ## Export JSON Schema and TS types from contracts (ROZ-12, ROZ-13)
-	@echo "schemas: not implemented yet"
+schemas: ## Export JSON Schema from contracts to packages/contracts/schema
+	uv run python -m rozmova_contracts.export_schemas

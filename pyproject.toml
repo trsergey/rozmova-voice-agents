@@ -30,6 +30,8 @@ select = [
     "E", "W", "F", "I", "B", "UP", "SIM", "C4", "RUF",
     "ASYNC", "PT", "N", "S", "TID",
 ]
+# Ukrainian text (prompts, KB, test data) is legitimate; Cyrillic is not a typo.
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101"]

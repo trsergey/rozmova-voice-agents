@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ClientMessage",
+  "$defs": {
+    "AudioChunk": {
+      "additionalProperties": false,
+      "description": "A chunk of 16-bit PCM audio. Reserved for the voice channel after the MVP.",
+      "properties": {
+        "type": {
+          "const": "audio_chunk",
+          "default": "audio_chunk",
+          "title": "Type",
+          "type": "string"
+        },
+        "pcm16": {
+          "description": "Base64-encoded 16-bit PCM.",
+          "minLength": 1,
+          "title": "Pcm16",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "pcm16",
+        "seq"
+      ],
+      "title": "AudioChunk",
+      "type": "object"
+    },
+    "Hangup": {
+      "additionalProperties": false,
+      "description": "The subscriber ends the call.",
+      "properties": {
+        "type": {
+          "const": "hangup",
+          "default": "hangup",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Hangup",
+      "type": "object"
+    },
+    "UserText": {
+      "additionalProperties": false,
+      "description": "A subscriber utterance. Starts a turn, or cancels the running one and starts anew.",
+      "properties": {
+        "type": {
+          "const": "user_text",
+          "default": "user_text",
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "title": "UserText",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "audio_chunk": "#/$defs/AudioChunk",
+      "hangup": "#/$defs/Hangup",
+      "user_text": "#/$defs/UserText"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/UserText"
+    },
+    {
+      "$ref": "#/$defs/AudioChunk"
+    },
+    {
+      "$ref": "#/$defs/Hangup"
+    }
+  ]
+}
