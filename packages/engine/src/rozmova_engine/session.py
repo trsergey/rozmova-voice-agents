@@ -37,7 +37,7 @@ class PendingAction(BaseModel):
 
 
 class HistoryEntry(BaseModel):
-    """One message of the call with the turn it belongs to; turn 0 is the greeting."""
+    """One message of the call with the turn it belongs to; the greeting is turn 1."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
