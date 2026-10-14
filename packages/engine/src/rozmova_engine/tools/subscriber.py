@@ -5,8 +5,9 @@ subscribers that lives as long as the process, so a service activated in one cal
 active in the next one. Tariff and service ids, names and prices match the catalog in
 ``kb/README.md`` (a test keeps them in sync).
 
-``activate_service`` here activates immediately; the two-phase confirmation (ROZ-28) is
-enforced by the engine around this tool, not inside it.
+``activate_service`` is two-phase: its ``quote`` names the service and price, and
+``tools.confirmation.call_tool`` executes it only after the subscriber confirmed in the
+next turn (ADR 0013).
 """
 
 from collections.abc import Iterable
@@ -16,7 +17,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rozmova_engine.tools.registry import Tool, ToolContext, ToolResult, tool_error
+from rozmova_engine.tools.registry import Quote, Tool, ToolContext, ToolResult, tool_error
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +128,10 @@ def subscriber_tools(billing: MockBilling) -> list[Tool[Any]]:
             "available": [_offer(s) for s in SERVICES.values() if s.id not in subscriber.services],
         }
 
-    async def activate_service(args: ActivateServiceArgs, ctx: ToolContext) -> ToolResult:
+    def check_activation(
+        args: ActivateServiceArgs, ctx: ToolContext
+    ) -> tuple[Subscriber, Offer] | ToolResult:
+        """Who gets which service, or the final answer when there is nothing to do."""
         subscriber = billing.find(ctx.subscriber_id)
         if subscriber is None:
             return _unknown_subscriber(ctx)
@@ -140,6 +144,20 @@ def subscriber_tools(billing: MockBilling) -> list[Tool[Any]]:
             )
         if service.id in subscriber.services:
             return {"status": "already_active", **_offer(service)}
+        return subscriber, service
+
+    async def quote_activation(args: ActivateServiceArgs, ctx: ToolContext) -> Quote | ToolResult:
+        checked = check_activation(args, ctx)
+        if not isinstance(checked, tuple):
+            return checked
+        _, service = checked
+        return Quote({"service": service.name, "price": service.price})
+
+    async def activate_service(args: ActivateServiceArgs, ctx: ToolContext) -> ToolResult:
+        checked = check_activation(args, ctx)
+        if not isinstance(checked, tuple):
+            return checked
+        subscriber, service = checked
         subscriber.services.add(service.id)
         return {"status": "activated", **_offer(service)}
 
@@ -164,9 +182,12 @@ def subscriber_tools(billing: MockBilling) -> list[Tool[Any]]:
         ),
         Tool(
             "activate_service",
-            "Підключає абоненту послугу за її кодом.",
+            "Підключає абоненту послугу за її кодом. Перший виклик нічого не підключає, а "
+            "повертає назву й ціну: назви їх і спитай згоди. Якщо абонент погодився в "
+            "наступній репліці, виклич ще раз із тим самим кодом.",
             ActivateServiceArgs,
             activate_service,
             side_effect=True,
+            quote=quote_activation,
         ),
     ]

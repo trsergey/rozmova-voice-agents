@@ -14,8 +14,9 @@ injection, and a stale "yes" must not activate something later (S3).
 The engine splits the tool into two phases. The first call in turn N does not execute: it
 returns `{"status": "confirmation_required", "service": …, "price": …}` and stores
 `pending_action = {name, args, turn: N}`. A call in a later turn with the same arguments
-while `pending_action` exists executes and clears it. A turn that ends without executing
-clears `pending_action`; different arguments restart the cycle. Whether a reply means
+while `pending_action` exists executes and clears it. A later turn that ends without executing
+clears `pending_action` (the turn that announced the price keeps it), so consent must come
+in the next turn; different arguments restart the cycle. Whether a reply means
 consent is still the LLM's judgement.
 
 ## Alternatives considered
@@ -29,4 +30,5 @@ consent is still the LLM's judgement.
 - Guarantees in code: no activation in the turn that names the price, no activation of a
   different service, no reuse of an old consent.
 - Eval cases cover "no", "changed my mind", topic change and "activate everything".
-- Other side-effect tools must opt into the same mechanism.
+- Other side-effect tools must opt into the same mechanism: a tool with a `quote` is
+  two-phase, and the registry refuses to run it outside `tools.confirmation.call_tool`.

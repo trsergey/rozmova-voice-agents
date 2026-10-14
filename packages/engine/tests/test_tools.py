@@ -167,25 +167,10 @@ async def test_list_services_splits_active_and_available(registry: ToolRegistry)
     assert set(active) | set(available) == set(SERVICES)
 
 
-async def test_activate_service_changes_billing(registry: ToolRegistry) -> None:
-    first = await call(registry, "activate_service", service_id="roaming_eu")
-    second = await call(registry, "activate_service", service_id="roaming_eu")
-    services = await call(registry, "list_services")
-
-    assert first == {
-        "status": "activated",
-        "id": "roaming_eu",
-        "name": "Роумінг Європа",
-        "price": "99 грн/міс",
-    }
-    assert second["status"] == "already_active"
-    assert set(column(services, "active", "id")) == {"roaming_eu", "antispam"}
-
-
-async def test_activate_unknown_service_lists_known_ids(registry: ToolRegistry) -> None:
-    result = await call(registry, "activate_service", service_id="kosmos")
-    assert result["error"] == "unknown_service"
-    assert result["known_ids"] == list(SERVICES)
+async def test_two_phase_tool_is_refused_by_plain_call(registry: ToolRegistry) -> None:
+    # activate_service goes through confirmation.call_tool; see test_confirmation.py.
+    with pytest.raises(ValueError, match="two-phase"):
+        await call(registry, "activate_service", service_id="roaming_eu")
 
 
 async def test_activate_service_requires_service_id(registry: ToolRegistry) -> None:
