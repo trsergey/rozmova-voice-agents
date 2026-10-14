@@ -34,7 +34,8 @@ ACTIVATE_TOOL = ToolSpec(
 
 
 def sse(name: str) -> httpx2.Response:
-    content = (FIXTURES / name).read_bytes()
+    # An SSE event ends with a blank line; the end-of-file hook trims the last one.
+    content = (FIXTURES / name).read_bytes().rstrip(b"\n") + b"\n\n"
     return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=content)
 
 
