@@ -12,8 +12,9 @@ the other two, and ``run`` flushes what is still queued and closes the socket wi
 right code. An unexpected exception in a task closes the session with 1011 after an
 ``error`` event. Ping/pong is done by uvicorn (``ws_ping_interval``), not here.
 
-Turns run one after another in this ticket; cancelling a running turn on a new
-utterance (FR-4) comes with ROZ-49.
+A new utterance while a turn is running cancels that turn (FR-4): the client gets
+``turn_cancelled``, the engine keeps the partial reply as ``interrupted`` and finishes a
+started side-effect tool under ``shield`` before the cancellation completes.
 """
 
 import asyncio
@@ -148,15 +149,56 @@ class Session:
         try:
             await self._start_call()
             while True:
-                text = await self._inbox.get()
+                text = await self._next_utterance()
+                await self._cancel_current_turn()
                 self._current_turn = asyncio.create_task(self._run_turn(text), name="turn")
-                await self._current_turn
         finally:
-            # turn_loop is being cancelled or failed: never leave the turn running behind.
-            if self._current_turn is not None and not self._current_turn.done():
-                self._current_turn.cancel()
-                with suppress(asyncio.CancelledError):
-                    await self._current_turn
+            # The session is closing: never leave a turn running behind it.
+            await self._cancel_current_turn(notify=False)
+
+    async def _next_utterance(self) -> str:
+        """Wait for an utterance; meanwhile surface the result of a turn that finishes.
+
+        Waiting on both is what lets a finished turn close the session (``SessionClosing``)
+        and guarantees every turn's exception is retrieved.
+        """
+        while True:
+            getter = asyncio.ensure_future(self._inbox.get())
+            waiting: set[asyncio.Future[object]] = {getter}  # type: ignore[arg-type]
+            turn = self._current_turn
+            if turn is not None:
+                waiting.add(turn)  # type: ignore[arg-type]
+            try:
+                await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                if not getter.done():
+                    getter.cancel()
+            if turn is not None and turn.done():
+                self._current_turn = None
+                _reraise(turn)
+            if getter.done() and not getter.cancelled():
+                return getter.result()
+
+    async def _cancel_current_turn(self, *, notify: bool = True) -> None:
+        """Cancel the running turn, wait until it has cleaned up, tell the client."""
+        turn, self._current_turn = self._current_turn, None
+        if turn is None:
+            return
+        if turn.done():
+            _reraise(turn)
+            return
+        turn_id = self.state.turn
+        turn.cancel()
+        try:
+            await turn
+        except asyncio.CancelledError:
+            # `suppress(CancelledError)` would also swallow a cancellation of turn_loop
+            # itself arriving right now; only the turn's own cancellation is expected.
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+        if notify:
+            await self.emit(protocol.TurnCancelled(turn_id=turn_id))
 
     async def _writer(self) -> None:
         while True:
@@ -235,6 +277,12 @@ class Session:
         with suppress(Exception):
             async with asyncio.timeout(FLUSH_TIMEOUT):
                 await self._transport.send_text(event.model_dump_json())
+
+
+def _reraise(turn: asyncio.Task[None]) -> None:
+    """Retrieve a finished turn's outcome; ``run_turn`` lets only ``SessionClosing`` out."""
+    if not turn.cancelled() and (exc := turn.exception()) is not None:
+        raise exc
 
 
 def _invalid_message(err: ValidationError) -> protocol.Error:

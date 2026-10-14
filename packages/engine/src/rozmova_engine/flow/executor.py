@@ -18,6 +18,7 @@ The executor emits ``node_enter`` for every node it runs, plus the events of the
 themselves; ``session_end`` is the gateway's, from ``TurnOutcome.ended``.
 """
 
+import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -43,6 +44,7 @@ from rozmova_engine.session import HistoryEntry, SessionState
 from rozmova_engine.timings import TurnTimer
 from rozmova_engine.tool_loop import ToolLoop
 from rozmova_engine.tools import ToolContext, ToolRegistry, call_tool, finish_turn
+from rozmova_engine.tools.shield import complete_despite_cancel
 
 Emit = Callable[[protocol.ProtocolMessage], Awaitable[None]]
 
@@ -126,9 +128,10 @@ class FlowExecutor:
         if start is None:
             raise FlowError("the flow has no start node")
         state.turn = 1
-        outcome = await self._walk(state, start, utterance=False, timer=timer)
-        finish_turn(state)
-        return outcome
+        try:
+            return await self._walk(state, start, utterance=False, timer=timer)
+        finally:
+            finish_turn(state)
 
     async def handle(self, state: SessionState, utterance: str, timer: TurnTimer) -> TurnOutcome:
         """Run one subscriber turn from ``current_node``."""
@@ -137,9 +140,12 @@ class FlowExecutor:
         state.turn += 1
         user = Message(role="user", content=utterance)
         state.history.append(HistoryEntry(turn=state.turn, message=user))
-        outcome = await self._walk(state, state.current_node, utterance=True, timer=timer)
-        finish_turn(state)
-        return outcome
+        try:
+            return await self._walk(state, state.current_node, utterance=True, timer=timer)
+        finally:
+            # Also when the turn is cancelled: a quote from an earlier turn must not survive
+            # an interrupted turn and be confirmed one turn later (ADR 0013).
+            finish_turn(state)
 
     async def _walk(
         self, state: SessionState, node_id: str, *, utterance: bool, timer: TurnTimer
@@ -239,10 +245,16 @@ class FlowExecutor:
         call = ToolCall(id=f"{node.id}:{state.turn}", name=node.data.tool, arguments=args)
         await self._emit(protocol.ToolCall(turn_id=state.turn, name=call.name, args=args))
         with timer.stage(f"tool.{call.name}"):
-            result = await call_tool(self._registry, call, self._ctx, state)
-        await self._emit(protocol.ToolResult(turn_id=state.turn, name=call.name, result=result))
+            work = call_tool(self._registry, call, self._ctx, state)
+            if self._registry.has_side_effect(call.name):
+                result, interrupted = await complete_despite_cancel(work)
+            else:
+                result, interrupted = await work, False
         if node.data.save_as:
             state.slots[node.data.save_as] = result
+        if interrupted:
+            raise asyncio.CancelledError
+        await self._emit(protocol.ToolResult(turn_id=state.turn, name=call.name, result=result))
 
     def _branch(self, node: ConditionNode, state: SessionState) -> str:
         for case in node.data.cases:

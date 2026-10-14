@@ -1,6 +1,7 @@
 """Session tests over a fake transport, the demo flow and FakeProvider."""
 
 import asyncio
+import gc
 import json
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from rozmova_contracts.flow import FlowGraph
 from rozmova_engine.flow import FlowExecutor
 from rozmova_engine.providers import ProviderError, TextDelta, ToolCall
 from rozmova_engine.providers.fake import Delay, FakeProvider, Raise, Step, text_turn
-from rozmova_engine.session import SessionState
+from rozmova_engine.session import INTERRUPTED_MARK, SessionState
 from rozmova_engine.tool_loop import ROUTE_TOOL, ToolLoop
 from rozmova_engine.tools import (
     DEMO_SUBSCRIBER_ID,
@@ -95,7 +96,7 @@ class Call:
         turn_timeout: float = 30.0,
     ) -> None:
         self.transport = FakeTransport()
-        provider = FakeProvider(llm_calls)
+        self.provider = provider = FakeProvider(llm_calls)
         registry = ToolRegistry(subscriber_tools(MockBilling(demo_subscribers())))
         ctx = ToolContext(subscriber_id=DEMO_SUBSCRIBER_ID)
         state = SessionState(call_id=uuid4(), bot_id=uuid4(), bot_version=1)
@@ -288,3 +289,61 @@ async def test_client_that_stops_reading_is_closed_with_1013() -> None:
         call.transport.send({"type": "user_text", "text": "алло"})
         await call.ended()
     assert call.transport.closed_with == 1013
+
+
+# --- cancellation (FR-4) -------------------------------------------------------------------
+
+
+async def test_new_utterance_cancels_the_running_turn() -> None:
+    long_reply: list[Step] = [TextDelta(text="Тарифи у нас такі: "), Delay(10)]
+    async with Call(long_reply, text_turn("Слухаю вас.")) as call:
+        call.transport.send({"type": "user_text", "text": "розкажи про тарифи"})
+        await call.transport.until("assistant_delta", 2)
+        call.transport.send({"type": "user_text", "text": "стоп, інше питання"})
+        sent = await call.transport.until("turn_end", 2)
+
+    types = [e["type"] for e in sent[3:]]
+    assert types[:2] == ["assistant_delta", "turn_cancelled"]
+    assert sent[4] == {"type": "turn_cancelled", "turn_id": 2}
+    assert sent[-1]["turn_id"] == 3
+
+    history = call.session.state.history
+    interrupted = [e for e in history if e.interrupted]
+    assert [e.message.content for e in interrupted] == ["Тарифи у нас такі: "]
+    # The next LLM call saw the cut-off reply with the marker.
+    seen = call.provider.calls[-1].messages
+    assert any(m.content.endswith(INTERRUPTED_MARK) for m in seen)
+
+
+async def test_hangup_during_a_turn_closes_without_hanging() -> None:
+    async with Call([Delay(10), TextDelta(text="пізно")]) as call:
+        call.transport.send({"type": "user_text", "text": "алло"})
+        await asyncio.sleep(0.02)
+        call.transport.send({"type": "hangup"})
+        await call.ended()
+    assert call.transport.sent[-1] == {"type": "session_end", "reason": "hangup"}
+    assert call.transport.closed_with == 1000
+
+
+async def test_no_task_exception_is_left_unretrieved() -> None:
+    problems: list[dict[str, Any]] = []
+    loop = asyncio.get_running_loop()
+    loop.set_exception_handler(lambda _, context: problems.append(context))
+    try:
+        llm: list[list[Step]] = [
+            [TextDelta(text="Довга відповідь "), Delay(10)],
+            [Raise(ProviderError("503", retryable=False))],
+            route("bye"),
+        ]
+        async with Call(*llm) as call:
+            call.transport.send({"type": "user_text", "text": "раз"})
+            await call.transport.until("assistant_delta", 2)
+            call.transport.send({"type": "user_text", "text": "два"})
+            await call.transport.until("error")
+            call.transport.send({"type": "user_text", "text": "до побачення"})
+            await call.ended()
+        gc.collect()
+        await asyncio.sleep(0)
+    finally:
+        loop.set_exception_handler(None)
+    assert problems == []

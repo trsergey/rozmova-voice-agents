@@ -111,6 +111,11 @@ class ToolRegistry:
         except KeyError:
             raise UnknownToolError(f"unknown tool {name!r}") from None
 
+    def has_side_effect(self, name: str) -> bool:
+        """Whether ``name`` changes subscriber data; false for unknown tools."""
+        tool = self._tools.get(name)
+        return tool is not None and tool.side_effect
+
     def specs(self, names: Iterable[str]) -> list[ToolSpec]:
         """Specs for the tools a node allows, in the node's order."""
         return [self.get(name).spec for name in names]
