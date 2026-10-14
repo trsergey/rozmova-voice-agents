@@ -4,7 +4,7 @@ MEMBERS := $(wildcard packages/*) apps/gateway apps/admin-api
 
 COMPOSE := docker compose -f infra/compose.dev.yml
 
-.PHONY: help install lint fmt typecheck test schemas up down down-v ps logs
+.PHONY: help install lint fmt typecheck test schemas migrate up down down-v ps logs
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -39,6 +39,11 @@ schemas: ## Export JSON Schema and TS types from contracts
 		$(JSON2TS) --input $$f --output $$out --additionalProperties false; \
 		echo "wrote $$out"; \
 	done
+
+ALEMBIC := uv run alembic -c packages/core/alembic.ini
+
+migrate: ## Apply DB migrations to ROZMOVA_DATABASE_URL (make migrate rev=-1 to step back)
+	$(if $(rev),$(ALEMBIC) downgrade $(rev),$(ALEMBIC) upgrade head)
 
 up: ## Start the local stack (Postgres, Redis, Jaeger, Prometheus, Grafana) and wait until healthy
 	$(COMPOSE) up -d --wait
