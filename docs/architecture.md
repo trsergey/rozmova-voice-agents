@@ -7,6 +7,7 @@
 - [SDD](Rozmova_SDD.md): technical design: gateway, protocol, flow semantics, RAG, data
   model, Redis, admin API, security, observability, testing, deployment.
 - [ADRs](adr/README.md): decisions and the alternatives we rejected.
+- [WebSocket protocol](protocol.md): messages, error and close codes, examples.
 
 ## At a glance
 
