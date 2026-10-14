@@ -3,7 +3,7 @@ name = "rozmova-engine"
 version = "0.1.0"
 description = "Dialogue engine: flow executor, LLM providers, tools, RAG, eval runner."
 requires-python = ">=3.12,<3.13"
-dependencies = ["rozmova-contracts", "rozmova-core"]
+dependencies = ["pydantic>=2.9", "rozmova-contracts", "rozmova-core"]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.14"]

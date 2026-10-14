@@ -183,7 +183,7 @@ sequenceDiagram
 class LLMProvider(Protocol):
     def stream(
         self, messages: list[Message], tools: list[ToolSpec], *, model: str
-    ) -> AsyncIterator[TextDelta | ToolCall | Usage]: ...
+    ) -> AsyncGenerator[TextDelta | ToolCall | Usage]: ...
 ```
 
 **Моделі.** Критерії: швидкий перший токен (без reasoning), надійний function calling, прийнятна українська, низька ціна. Кандидати станом на 14.10.2026 (ціни за 1M токенів, вхід / вихід, з офіційних сторінок цін):

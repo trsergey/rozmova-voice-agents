@@ -741,12 +741,14 @@ name = "rozmova-engine"
 version = "0.1.0"
 source = { editable = "packages/engine" }
 dependencies = [
+    { name = "pydantic" },
     { name = "rozmova-contracts" },
     { name = "rozmova-core" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic", specifier = ">=2.9" },
     { name = "rozmova-contracts", editable = "packages/contracts" },
     { name = "rozmova-core", editable = "packages/core" },
 ]
