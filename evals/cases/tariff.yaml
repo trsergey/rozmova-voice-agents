@@ -1,0 +1,134 @@
+# S2: questions answered from the knowledge base (tariffs, services, roaming, FAQ).
+# Every fact below is taken from kb/; the answer must not add prices or conditions.
+
+- id: tariff_bezlim_contents
+  description: Scenario S2 as written in the PRD.
+  tags: [tariff]
+  turns:
+    - user: Що входить у тариф Безлім?
+      expected_facts:
+        - безлімітний мобільний інтернет
+        - 1500 хвилин на інші номери України
+        - 300 SMS
+        - 395 грн на місяць
+      must_not_call: [activate_service]
+
+- id: tariff_cheapest
+  description: The bot has to pick the cheapest tariff from the knowledge base.
+  tags: [tariff]
+  turns:
+    - user: який у вас найдешевший тариф? мені тільки дзвонити і вайбер
+      expected_facts:
+        - тариф «Старт»
+        - 145 грн на місяць
+        - безлімітні месенджери
+      must_not_call: [activate_service]
+
+- id: tariff_optimum_rollover
+  description: Rollover rule of the Optimum tariff.
+  tags: [tariff]
+  turns:
+    - user: на оптимумі гігабайти згорають в кінці місяця чи переносяться?
+      expected_facts:
+        - невикористані ГБ переносяться на наступний місяць
+        - не більше ніж 30 ГБ
+        - хвилини й SMS не переносяться
+
+- id: tariff_family
+  description: Family tariff size and price.
+  tags: [tariff]
+  turns:
+    - user: Хочу взяти сімейний на себе, чоловіка і двох дітей. Скільки це буде коштувати?
+      expected_facts:
+        - до 4 номерів на одному рахунку
+        - 640 грн на місяць за всю родину
+        - 80 ГБ спільного інтернету
+
+- id: tariff_kids_roaming
+  description: Restriction of the kids tariff; the honest answer is "no".
+  tags: [tariff]
+  turns:
+    - user: синові беремо дитячий тариф, а за кордоном у нього телефон працюватиме?
+      expected_facts:
+        - роумінг на тарифі «Дитячий» недоступний
+      must_not_call: [activate_service]
+
+- id: tariff_change_fee
+  description: Tariff change conditions from the FAQ.
+  tags: [tariff, faq]
+  turns:
+    - user: якщо я перейду на інший тариф, з мене щось знімуть?
+      expected_facts:
+        - безкоштовно, якщо з останньої зміни тарифу минуло понад 30 днів
+        - інакше 50 грн
+
+- id: tariff_not_found
+  description: Scenario S2 "not found"; the tariff Kosmos does not exist in the knowledge base.
+  tags: [tariff]
+  turns:
+    - user: що входить у тариф Космос?
+      reference: >-
+        У базі знань немає інформації про тариф «Космос». Хочете, переведу на оператора?
+      must_not_call: [activate_service]
+
+- id: roaming_turkey
+  description: Roaming zone lookup for a zone 2 country, with the package offer.
+  tags: [tariff]
+  turns:
+    - user: летимо в туреччину на тиждень, скільки там коштуватиме інтернет?
+      expected_facts:
+        - Туреччина в зоні 2
+        - 10 грн за 1 МБ без пакета
+        - пакет «Роумінг Світ» 249 грн за 7 днів
+      must_not_call: [activate_service]
+
+- id: roaming_eu_contents
+  description: Contents of the Europe roaming package.
+  tags: [tariff]
+  turns:
+    - user: що дає роумінг європа? їду в польщу
+      expected_facts:
+        - 8 ГБ інтернету
+        - 100 хвилин
+        - 99 грн на місяць
+      must_not_call: [activate_service]
+
+- id: out_of_data_options
+  description: The bot explains the extra data package but must not activate it unasked.
+  tags: [tariff]
+  turns:
+    - user: в мене закінчився інтернет, а до кінця місяця ще тиждень. що робити?
+      expected_facts:
+        - послуга «Додаткові 10 ГБ»
+        - 69 грн
+      must_not_call: [activate_service]
+
+- id: faq_esim
+  description: eSIM order from the FAQ.
+  tags: [faq]
+  turns:
+    - user: можна перейти на есім? і скільки це коштує
+      expected_facts:
+        - застосунок «Моя Хвиля» або магазин
+        - заміна на eSIM безкоштовна
+
+- id: faq_lost_sim
+  description: Lost SIM card; the answer comes from the FAQ.
+  tags: [faq]
+  turns:
+    - user: Я загубив телефон разом із сімкою, що робити??
+      expected_facts:
+        - заблокувати номер у застосунку «Моя Хвиля» або через оператора
+        - блокування безкоштовне
+        - відновити номер у магазині з паспортом
+
+- id: faq_loan
+  description: Out-of-money question answered with the Loan service.
+  tags: [faq]
+  turns:
+    - user: на рахунку нуль, а мені терміново треба подзвонити. можна якось у борг?
+      expected_facts:
+        - позика до 100 грн
+        - "*125#"
+        - комісія 10%
+      must_not_call: [activate_service]

@@ -1,0 +1,73 @@
+# S1: balance, current tariff and connected services through the mock subscriber tools.
+# Mock values come from ROZ-24, so these cases check tool calls, not amounts.
+
+- id: balance_basic
+  description: Plain balance question from scenario S1.
+  tags: [balance]
+  turns:
+    - user: скільки в мене грошей на рахунку?
+      expected_tools:
+        - name: get_balance
+      must_not_call: [activate_service]
+      reference: Називає суму на рахунку з результату get_balance.
+
+- id: balance_typo_informal
+  description: Informal wording with a typo and no question mark.
+  tags: [balance]
+  turns:
+    - user: шо там у мене з грошима, скільки лишилось на рахунку
+      expected_tools:
+        - name: get_balance
+      reference: Називає залишок на рахунку з результату get_balance.
+
+- id: balance_one_word
+  description: A single keyword instead of a sentence.
+  tags: [balance]
+  turns:
+    - user: баланс
+      expected_tools:
+        - name: get_balance
+      reference: Називає суму на рахунку з результату get_balance.
+
+- id: balance_then_tariff
+  description: Two account questions in a row; each turn calls its own tool.
+  tags: [balance]
+  turns:
+    - user: Добрий день. Підкажіть, будь ласка, мій баланс
+      expected_tools:
+        - name: get_balance
+      reference: Називає суму на рахунку.
+    - user: дякую. а на якому я зараз тарифі?
+      expected_tools:
+        - name: get_current_tariff
+      must_not_call: [activate_service]
+      reference: Називає поточний тариф абонента з результату get_current_tariff.
+
+- id: current_tariff
+  description: Current tariff lookup.
+  tags: [balance]
+  turns:
+    - user: нагадайте який в мене тариф, бо я вже забула
+      expected_tools:
+        - name: get_current_tariff
+      reference: Називає поточний тариф абонента.
+
+- id: connected_services
+  description: List of connected services; must not activate anything.
+  tags: [balance]
+  turns:
+    - user: які в мене послуги підключені? щось гроші списуються незрозуміло за що
+      expected_tools:
+        - name: list_services
+      must_not_call: [activate_service]
+      reference: Перелічує підключені послуги з результату list_services і їхню вартість.
+
+- id: balance_self_check
+  description: How to check the balance without the assistant; answer comes from the FAQ.
+  tags: [balance, faq]
+  turns:
+    - user: а як мені самій баланс перевіряти, без дзвінка вам?
+      expected_facts:
+        - застосунок «Моя Хвиля»
+        - "*111#"
+      must_not_call: [activate_service]

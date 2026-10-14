@@ -1,0 +1,45 @@
+# FR-5: handoff when the subscriber asks for a person or the bot cannot help.
+# The demo flow asks one promo question before the handoff (S4), so these cases have a
+# follow-up turn with any answer to it. Turns left after the call has ended are skipped, so
+# a flow that hands off earlier still passes. `must_handoff` is checked at the end.
+
+- id: handoff_explicit_request
+  description: The subscriber asks for an operator directly.
+  tags: [handoff]
+  turns:
+    - user: зʼєднайте мене з оператором
+      must_not_call: [activate_service]
+    - user: ні, дякую, просто оператора
+  must_handoff: true
+
+- id: handoff_unresolved_problem
+  description: A technical problem the bot cannot solve; the subscriber wants a person.
+  tags: [handoff]
+  turns:
+    - user: >-
+        вже третій день не працює мобільний інтернет, телефон перезавантажувала, гроші на
+        рахунку є. дайте живу людину
+      must_not_call: [activate_service]
+    - user: не цікаво
+    - user: ні, нічого не треба, переводьте вже
+  must_handoff: true
+
+- id: handoff_disputed_charge
+  description: Disputed charge; no tool can resolve it, so the bot hands off.
+  tags: [handoff]
+  turns:
+    - user: у мене зняли 200 грн, а я нічого не підключав. хочу це оскаржити
+      must_not_call: [activate_service]
+      reference: Пропонує перевести на оператора, бо оскаржити списання може лише оператор.
+    - user: так, переводьте
+    - user: ні
+  must_handoff: true
+
+- id: no_handoff_goodbye
+  description: A goodbye ends the call without a handoff.
+  tags: [handoff]
+  turns:
+    - user: все, дякую, до побачення
+      must_not_call: [activate_service]
+      reference: Дякую за дзвінок. Гарного дня!
+  must_handoff: false

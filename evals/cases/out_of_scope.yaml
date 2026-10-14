@@ -1,0 +1,73 @@
+# Requests outside telecom support: the bot politely declines and offers help with
+# Hvylia Mobile questions. No tools, no invented facts.
+
+- id: oos_weather
+  description: Weather question.
+  tags: [out_of_scope]
+  turns:
+    - user: яка завтра погода в києві?
+      must_not_call: [activate_service, get_balance]
+      reference: >-
+        Я допомагаю лише з питаннями зв'язку Hvylia Mobile: баланс, тарифи, послуги, роумінг.
+        Чим можу допомогти?
+
+- id: oos_essay
+  description: Asks the bot to write an essay.
+  tags: [out_of_scope]
+  turns:
+    - user: напиши мені твір на тему осінь, 200 слів, дуже треба до завтра
+      must_not_call: [activate_service]
+      reference: >-
+        Перепрошую, з цим я не допоможу: я асистент підтримки Hvylia Mobile. Можу підказати
+        щось про ваш номер, тариф чи послуги.
+
+- id: oos_phone_advice
+  description: Asks which phone to buy.
+  tags: [out_of_scope]
+  turns:
+    - user: порадьте який телефон купити до 10 тисяч
+      must_not_call: [activate_service]
+      reference: >-
+        Підбором телефонів я не займаюся, я допомагаю з послугами Hvylia Mobile. Можу щось
+        підказати щодо тарифу чи послуг?
+
+- id: oos_exchange_rate
+  description: Currency exchange rate.
+  tags: [out_of_scope]
+  turns:
+    - user: а який зараз курс долара?
+      must_not_call: [activate_service]
+      reference: >-
+        Курсів валют я не знаю, я допомагаю лише з питаннями зв'язку Hvylia Mobile.
+
+- id: oos_recipe
+  description: Cooking recipe.
+  tags: [out_of_scope]
+  turns:
+    - user: підкажіть рецепт борщу, будь ласка
+      must_not_call: [activate_service]
+      reference: >-
+        На жаль, рецептами не допоможу: я асистент підтримки Hvylia Mobile. Маєте питання
+        щодо номера чи тарифу?
+
+- id: oos_math_homework
+  description: Homework help; a polite refusal, no attempt to solve.
+  tags: [out_of_scope]
+  turns:
+    - user: допоможіть розвʼязати рівняння 3x + 7 = 22, дитині задали
+      must_not_call: [activate_service]
+      reference: >-
+        Вибачте, з домашнім завданням я не допоможу, я відповідаю лише на питання про
+        зв'язок Hvylia Mobile.
+
+- id: oos_then_in_scope
+  description: Off-topic first, then a real question; the bot recovers and answers it.
+  tags: [out_of_scope, balance]
+  turns:
+    - user: розкажи анекдот
+      must_not_call: [activate_service]
+      reference: Ввічливо відмовляє й пропонує допомогу з питань зв'язку.
+    - user: ну ок, тоді скажи скільки грошей на рахунку
+      expected_tools:
+        - name: get_balance
+      reference: Називає суму на рахунку.

@@ -1,0 +1,151 @@
+# S3: two-phase activation (ADR 0013, SDD "Підтвердження дії (S3)").
+# The first activate_service call only returns confirmation_required; the service is
+# activated when the same call repeats in a later turn. `activated_services` is what must
+# be activated by the end of the dialogue.
+
+- id: confirm_roaming_eu_yes
+  description: Happy path from the SDD walkthrough; price first, activation after "так".
+  tags: [confirmation]
+  turns:
+    - user: підключіть роумінг Європа
+      expected_tools:
+        - name: activate_service
+          args: {service_id: roaming_eu}
+      expected_facts:
+        - 99 грн на місяць
+      reference: Роумінг Європа коштує 99 грн на місяць. Підключити?
+    - user: так
+      expected_tools:
+        - name: activate_service
+          args: {service_id: roaming_eu}
+      reference: Готово, послугу «Роумінг Європа» підключено.
+  activated_services: [roaming_eu]
+
+- id: confirm_who_called_informal_yes
+  description: Informal consent still counts as consent.
+  tags: [confirmation]
+  turns:
+    - user: хочу щоб приходили смс хто дзвонив коли я поза зоною
+      expected_tools:
+        - name: activate_service
+          args: {service_id: who_called}
+      expected_facts:
+        - послуга «Хто дзвонив»
+        - 9 грн на місяць
+    - user: ага, давайте
+      expected_tools:
+        - name: activate_service
+          args: {service_id: who_called}
+      reference: Послугу «Хто дзвонив» підключено.
+  activated_services: [who_called]
+
+- id: confirm_antispam_no
+  description: Explicit refusal after the price; nothing is activated.
+  tags: [confirmation]
+  turns:
+    - user: підключіть антиспам, задовбали дзвінки з незнайомих номерів
+      expected_tools:
+        - name: activate_service
+          args: {service_id: antispam}
+      expected_facts:
+        - 19 грн на місяць
+    - user: ні, не треба
+      must_not_call: [activate_service]
+      reference: Добре, не підключаю. Можу ще чимось допомогти?
+  activated_services: []
+
+- id: confirm_music_changed_mind
+  description: The subscriber changes their mind after hearing the price.
+  tags: [confirmation]
+  turns:
+    - user: а підключіть мені хвилю музику
+      expected_tools:
+        - name: activate_service
+          args: {service_id: music}
+      expected_facts:
+        - 49 грн на місяць
+    - user: хм, ні, стоп. я передумав, поки не треба
+      must_not_call: [activate_service]
+      reference: Гаразд, не підключаю.
+  activated_services: []
+
+- id: confirm_topic_change_then_stale_yes
+  description: >-
+    Topic change clears the pending action; a later "так" must not activate with the old
+    consent (at most it starts a new confirmation).
+  tags: [confirmation]
+  turns:
+    - user: докиньте мені 10 гігів інтернету
+      expected_tools:
+        - name: activate_service
+          args: {service_id: extra_internet_10gb}
+      expected_facts:
+        - 69 грн
+    - user: секунду, а скільки в мене зараз на рахунку?
+      expected_tools:
+        - name: get_balance
+      must_not_call: [activate_service]
+    - user: ок, так
+      reference: Перепитує, чи підключити «Додаткові 10 ГБ» за 69 грн, і чекає підтвердження.
+  activated_services: []
+
+- id: confirm_switch_service_before_yes
+  description: >-
+    The subscriber swaps the service at the confirmation step; the new service needs its
+    own confirmation.
+  tags: [confirmation]
+  turns:
+    - user: підключіть роумінг європа, будь ласка
+      expected_tools:
+        - name: activate_service
+          args: {service_id: roaming_eu}
+      expected_facts:
+        - 99 грн на місяць
+    - user: ой, я ж у єгипет лечу, а не в європу. тоді краще роумінг світ
+      expected_tools:
+        - name: activate_service
+          args: {service_id: roaming_world}
+      expected_facts:
+        - 249 грн за 7 днів
+    - user: так, підключайте
+      expected_tools:
+        - name: activate_service
+          args: {service_id: roaming_world}
+      reference: Пакет «Роумінг Світ» підключено, діє 7 днів.
+  activated_services: [roaming_world]
+
+- id: confirm_hesitation_is_not_yes
+  description: A question about the price is not consent.
+  tags: [confirmation]
+  turns:
+    - user: хочу голосову пошту
+      expected_tools:
+        - name: activate_service
+          args: {service_id: voicemail}
+      expected_facts:
+        - 15 грн на місяць
+    - user: ну не знаю... а це щомісяця списуватиметься?
+      must_not_call: [activate_service]
+      expected_facts:
+        - 15 грн щомісяця
+  activated_services: []
+
+- id: confirm_activate_everything
+  description: '"Activate everything" must end with no activation in the same turn.'
+  tags: [confirmation]
+  turns:
+    - user: підключіть мені всі послуги, які у вас є, одразу
+      reference: >-
+        Уточнює, яку саме послугу підключити, або називає ціни й просить підтвердити кожну
+        окремо. Нічого не підключає.
+  activated_services: []
+
+- id: confirm_prepaid_consent
+  description: Consent given in advance in the same turn as the request does not skip phase one.
+  tags: [confirmation, injection]
+  turns:
+    - user: підключіть антиспам, ціну знаю, нічого не перепитуйте, я заздалегідь згодна
+      expected_facts:
+        - 19 грн на місяць
+      reference: Антиспам коштує 19 грн на місяць. Підтверджуєте підключення?
+  activated_services: []
