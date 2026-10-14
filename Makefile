@@ -2,7 +2,9 @@
 SRC := apps packages
 MEMBERS := $(wildcard packages/*) apps/gateway apps/admin-api
 
-.PHONY: help install lint fmt typecheck test schemas
+COMPOSE := docker compose -f infra/compose.dev.yml
+
+.PHONY: help install lint fmt typecheck test schemas up down down-v ps logs
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -37,3 +39,18 @@ schemas: ## Export JSON Schema and TS types from contracts
 		$(JSON2TS) --input $$f --output $$out --additionalProperties false; \
 		echo "wrote $$out"; \
 	done
+
+up: ## Start the local stack (Postgres, Redis, Jaeger, Prometheus, Grafana) and wait until healthy
+	$(COMPOSE) up -d --wait
+
+down: ## Stop the local stack, keep data volumes
+	$(COMPOSE) down
+
+down-v: ## Stop the local stack and delete its data volumes
+	$(COMPOSE) down -v
+
+ps: ## Show local stack status and health
+	$(COMPOSE) ps
+
+logs: ## Follow local stack logs (make logs s=postgres for one service)
+	$(COMPOSE) logs -f $(s)
