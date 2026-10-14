@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.9",
     "rozmova-contracts",
     "rozmova-core",
+    "structlog>=26.1.0",
 ]
 
 [build-system]

@@ -912,6 +912,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "rozmova-contracts" },
     { name = "rozmova-core" },
+    { name = "structlog" },
 ]
 
 [package.metadata]
@@ -921,6 +922,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9" },
     { name = "rozmova-contracts", editable = "packages/contracts" },
     { name = "rozmova-core", editable = "packages/core" },
+    { name = "structlog", specifier = ">=26.1.0" },
 ]
 
 [[package]]
