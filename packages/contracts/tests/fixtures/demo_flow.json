@@ -1,0 +1,28 @@
+{
+  "nodes": [
+    {"id": "start", "type": "start",
+     "data": {"greeting": "Вітаю! Я асистент Hvylia Mobile. Чим можу допомогти?"}},
+    {"id": "assist", "type": "llm_prompt",
+     "data": {
+       "prompt": "Ти асистент оператора Hvylia Mobile. Відповідай українською, коротко. Для балансу, тарифу й послуг абонента використовуй дії. Умови тарифів і послуг не вигадуй: якщо питання про те, що входить у тариф чи послугу або скільки це коштує, виклич route('tariff'). Якщо абонент просить оператора або ти не можеш допомогти — route('operator'). Якщо абонент прощається — route('bye').",
+       "tools": ["get_balance", "get_current_tariff", "list_services", "activate_service"],
+       "routes": ["tariff", "operator", "bye"]}},
+    {"id": "tariff_kb", "type": "kb_answer",
+     "data": {"top_k": 5, "min_similarity": 0.35,
+              "not_found_reply": "У базі знань немає відповіді на це питання. Хочете, переведу на оператора?"}},
+    {"id": "promo", "type": "llm_prompt",
+     "data": {
+       "prompt": "Перед переведенням на оператора одним реченням запропонуй підписку на новини про тарифи й спитай, чи цікаво. Коли абонент відповів будь-що — виклич route('done').",
+       "routes": ["done"]}},
+    {"id": "operator", "type": "handoff", "data": {"reason": "requested_or_unresolved"}},
+    {"id": "bye", "type": "end", "data": {"farewell": "Дякую за дзвінок. Гарного дня!"}}
+  ],
+  "edges": [
+    {"source": "start", "target": "assist"},
+    {"source": "assist", "target": "tariff_kb", "when": {"route": "tariff"}},
+    {"source": "assist", "target": "promo", "when": {"route": "operator"}},
+    {"source": "assist", "target": "bye", "when": {"route": "bye"}},
+    {"source": "tariff_kb", "target": "assist"},
+    {"source": "promo", "target": "operator", "when": {"route": "done"}}
+  ]
+}

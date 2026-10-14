@@ -9,18 +9,15 @@
         "type": {
           "const": "audio_chunk",
           "default": "audio_chunk",
-          "title": "Type",
           "type": "string"
         },
         "pcm16": {
           "description": "Base64-encoded 16-bit PCM.",
           "minLength": 1,
-          "title": "Pcm16",
           "type": "string"
         },
         "seq": {
           "minimum": 0,
-          "title": "Seq",
           "type": "integer"
         }
       },
@@ -39,7 +36,6 @@
         "type": {
           "const": "hangup",
           "default": "hangup",
-          "title": "Type",
           "type": "string"
         }
       },
@@ -56,13 +52,11 @@
         "type": {
           "const": "user_text",
           "default": "user_text",
-          "title": "Type",
           "type": "string"
         },
         "text": {
           "maxLength": 2000,
           "minLength": 1,
-          "title": "Text",
           "type": "string"
         }
       },

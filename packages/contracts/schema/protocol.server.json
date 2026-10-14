@@ -9,17 +9,14 @@
         "type": {
           "const": "assistant_delta",
           "default": "assistant_delta",
-          "title": "Type",
           "type": "string"
         },
         "turn_id": {
           "description": "1-based turn number within the call.",
           "minimum": 1,
-          "title": "Turn Id",
           "type": "integer"
         },
         "text": {
-          "title": "Text",
           "type": "string"
         }
       },
@@ -38,7 +35,6 @@
         "type": {
           "const": "error",
           "default": "error",
-          "title": "Type",
           "type": "string"
         },
         "code": {
@@ -50,16 +46,13 @@
             "rate_limited",
             "internal"
           ],
-          "title": "Code",
           "type": "string"
         },
         "message": {
-          "title": "Message",
           "type": "string"
         },
         "retryable": {
           "default": false,
-          "title": "Retryable",
           "type": "boolean"
         }
       },
@@ -79,11 +72,9 @@
         "type": {
           "const": "handoff",
           "default": "handoff",
-          "title": "Type",
           "type": "string"
         },
         "reason": {
-          "title": "Reason",
           "type": "string"
         }
       },
@@ -103,17 +94,14 @@
             "user",
             "assistant"
           ],
-          "title": "Role",
           "type": "string"
         },
         "text": {
-          "title": "Text",
           "type": "string"
         },
         "interrupted": {
           "default": false,
           "description": "The assistant reply was cut off by a new utterance.",
-          "title": "Interrupted",
           "type": "boolean"
         }
       },
@@ -133,11 +121,9 @@
         "type": {
           "const": "node_enter",
           "default": "node_enter",
-          "title": "Type",
           "type": "string"
         },
         "node_id": {
-          "title": "Node Id",
           "type": "string"
         }
       },
@@ -155,7 +141,6 @@
         "type": {
           "const": "session_end",
           "default": "session_end",
-          "title": "Type",
           "type": "string"
         },
         "reason": {
@@ -167,7 +152,6 @@
             "handoff",
             "completed"
           ],
-          "title": "Reason",
           "type": "string"
         }
       },
@@ -185,12 +169,10 @@
         "type": {
           "const": "session_started",
           "default": "session_started",
-          "title": "Type",
           "type": "string"
         },
         "call_id": {
           "format": "uuid",
-          "title": "Call Id",
           "type": "string"
         },
         "bot_version": {
@@ -202,12 +184,10 @@
               "type": "null"
             }
           ],
-          "description": "Published version number; null for a draft.",
-          "title": "Bot Version"
+          "description": "Published version number; null for a draft."
         },
         "resumed": {
           "default": false,
-          "title": "Resumed",
           "type": "boolean"
         },
         "history": {
@@ -223,8 +203,7 @@
             }
           ],
           "default": null,
-          "description": "Present only when resumed.",
-          "title": "History"
+          "description": "Present only when resumed."
         }
       },
       "required": [
@@ -243,19 +222,15 @@
       "properties": {
         "marker": {
           "minimum": 1,
-          "title": "Marker",
           "type": "integer"
         },
         "chunk_id": {
-          "title": "Chunk Id",
           "type": "string"
         },
         "document_id": {
-          "title": "Document Id",
           "type": "string"
         },
         "document_title": {
-          "title": "Document Title",
           "type": "string"
         },
         "section": {
@@ -267,8 +242,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Section"
+          "default": null
         }
       },
       "required": [
@@ -288,24 +262,20 @@
         "type": {
           "const": "tool_call",
           "default": "tool_call",
-          "title": "Type",
           "type": "string"
         },
         "turn_id": {
           "description": "1-based turn number within the call.",
           "minimum": 1,
-          "title": "Turn Id",
           "type": "integer"
         },
         "name": {
-          "title": "Name",
           "type": "string"
         },
         "args": {
           "additionalProperties": {
             "$ref": "#/$defs/JsonValue"
           },
-          "title": "Args",
           "type": "object"
         }
       },
@@ -325,17 +295,14 @@
         "type": {
           "const": "tool_result",
           "default": "tool_result",
-          "title": "Type",
           "type": "string"
         },
         "turn_id": {
           "description": "1-based turn number within the call.",
           "minimum": 1,
-          "title": "Turn Id",
           "type": "integer"
         },
         "name": {
-          "title": "Name",
           "type": "string"
         },
         "result": {
@@ -358,13 +325,11 @@
         "type": {
           "const": "turn_cancelled",
           "default": "turn_cancelled",
-          "title": "Type",
           "type": "string"
         },
         "turn_id": {
           "description": "1-based turn number within the call.",
           "minimum": 1,
-          "title": "Turn Id",
           "type": "integer"
         }
       },
@@ -382,13 +347,11 @@
         "type": {
           "const": "turn_end",
           "default": "turn_end",
-          "title": "Type",
           "type": "string"
         },
         "turn_id": {
           "description": "1-based turn number within the call.",
           "minimum": 1,
-          "title": "Turn Id",
           "type": "integer"
         },
         "timings": {
@@ -398,7 +361,6 @@
           "items": {
             "$ref": "#/$defs/Source"
           },
-          "title": "Sources",
           "type": "array"
         }
       },
@@ -417,7 +379,6 @@
       "properties": {
         "total_ms": {
           "minimum": 0,
-          "title": "Total Ms",
           "type": "number"
         },
         "ttft_ms": {
@@ -431,15 +392,13 @@
             }
           ],
           "default": null,
-          "description": "From accepting user_text to the first assistant_delta; null if no text.",
-          "title": "Ttft Ms"
+          "description": "From accepting user_text to the first assistant_delta; null if no text."
         },
         "stages": {
           "additionalProperties": {
             "type": "number"
           },
           "description": "Per-stage durations, e.g. state_load, embedding, search, llm_ttft, tools.",
-          "title": "Stages",
           "type": "object"
         }
       },

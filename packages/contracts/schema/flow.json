@@ -1,0 +1,512 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FlowGraph",
+  "$defs": {
+    "ConditionCase": {
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "description": "JSONLogic rule over session slots.",
+          "type": "object"
+        },
+        "route": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "when",
+        "route"
+      ],
+      "title": "ConditionCase",
+      "type": "object"
+    },
+    "ConditionData": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/ConditionCase"
+          },
+          "type": "array"
+        }
+      },
+      "title": "ConditionData",
+      "type": "object"
+    },
+    "ConditionNode": {
+      "additionalProperties": false,
+      "description": "Branches on slots without the LLM; the edge without ``when`` is the default.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeUI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "condition",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/ConditionData"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "data"
+      ],
+      "title": "ConditionNode",
+      "type": "object"
+    },
+    "Edge": {
+      "additionalProperties": false,
+      "description": "A transition. Without ``when`` it is the node's unconditional edge.",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EdgeWhen"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "title": "Edge",
+      "type": "object"
+    },
+    "EdgeWhen": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "route"
+      ],
+      "title": "EdgeWhen",
+      "type": "object"
+    },
+    "EndData": {
+      "additionalProperties": false,
+      "properties": {
+        "farewell": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "farewell"
+      ],
+      "title": "EndData",
+      "type": "object"
+    },
+    "EndNode": {
+      "additionalProperties": false,
+      "description": "Says farewell and ends the call.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeUI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "end",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/EndData"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "data"
+      ],
+      "title": "EndNode",
+      "type": "object"
+    },
+    "HandoffData": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "HandoffData",
+      "type": "object"
+    },
+    "HandoffNode": {
+      "additionalProperties": false,
+      "description": "Transfers the call to an operator and ends it.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeUI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "handoff",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/HandoffData"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "data"
+      ],
+      "title": "HandoffNode",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "KBAnswerData": {
+      "additionalProperties": false,
+      "properties": {
+        "top_k": {
+          "default": 5,
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "min_similarity": {
+          "default": 0.35,
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "not_found_reply": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "not_found_reply"
+      ],
+      "title": "KBAnswerData",
+      "type": "object"
+    },
+    "KBAnswerNode": {
+      "additionalProperties": false,
+      "description": "Waits for an utterance and answers from knowledge-base chunks only. One edge.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeUI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "kb_answer",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/KBAnswerData"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "data"
+      ],
+      "title": "KBAnswerNode",
+      "type": "object"
+    },
+    "LLMPromptData": {
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "tools": {
+          "description": "Tools the LLM may call.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "routes": {
+          "description": "Route names; the LLM gets a service action route(name) for each.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "LLMPromptData",
+      "type": "object"
+    },
+    "LLMPromptNode": {
+      "additionalProperties": false,
+      "description": "Waits for an utterance and answers with the LLM, or follows a route.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeUI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "llm_prompt",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/LLMPromptData"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "data"
+      ],
+      "title": "LLMPromptNode",
+      "type": "object"
+    },
+    "NodeUI": {
+      "additionalProperties": false,
+      "description": "Canvas position. Ignored by validation and by the version diff.",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "NodeUI",
+      "type": "object"
+    },
+    "StartData": {
+      "additionalProperties": false,
+      "properties": {
+        "greeting": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "greeting"
+      ],
+      "title": "StartData",
+      "type": "object"
+    },
+    "StartNode": {
+      "additionalProperties": false,
+      "description": "Entry point; sends the greeting. One outgoing edge.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeUI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "start",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/StartData"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "data"
+      ],
+      "title": "StartNode",
+      "type": "object"
+    },
+    "ToolData": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "description": "Arguments; string values are templates over slots.",
+          "type": "object"
+        },
+        "save_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Slot that receives the result."
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "title": "ToolData",
+      "type": "object"
+    },
+    "ToolNode": {
+      "additionalProperties": false,
+      "description": "Deterministic tool call without the LLM. One outgoing edge.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeUI"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "tool",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/ToolData"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "data"
+      ],
+      "title": "ToolNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "condition": "#/$defs/ConditionNode",
+            "end": "#/$defs/EndNode",
+            "handoff": "#/$defs/HandoffNode",
+            "kb_answer": "#/$defs/KBAnswerNode",
+            "llm_prompt": "#/$defs/LLMPromptNode",
+            "start": "#/$defs/StartNode",
+            "tool": "#/$defs/ToolNode"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/StartNode"
+          },
+          {
+            "$ref": "#/$defs/LLMPromptNode"
+          },
+          {
+            "$ref": "#/$defs/ToolNode"
+          },
+          {
+            "$ref": "#/$defs/KBAnswerNode"
+          },
+          {
+            "$ref": "#/$defs/ConditionNode"
+          },
+          {
+            "$ref": "#/$defs/HandoffNode"
+          },
+          {
+            "$ref": "#/$defs/EndNode"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/Edge"
+      },
+      "type": "array"
+    }
+  },
+  "type": "object"
+}

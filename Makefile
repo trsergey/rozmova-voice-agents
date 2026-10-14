@@ -26,5 +26,14 @@ fmt: ## Auto-fix lint issues and format
 test: ## Run pytest across the workspace
 	uv run pytest
 
-schemas: ## Export JSON Schema from contracts to packages/contracts/schema
+CONTRACTS := packages/contracts
+JSON2TS := npx --yes json-schema-to-typescript@15.0.4
+
+schemas: ## Export JSON Schema and TS types from contracts
 	uv run python -m rozmova_contracts.export_schemas
+	@mkdir -p $(CONTRACTS)/ts
+	@set -e; for f in $(CONTRACTS)/schema/*.json; do \
+		out=$(CONTRACTS)/ts/$$(basename $$f .json).d.ts; \
+		$(JSON2TS) --input $$f --output $$out --additionalProperties false; \
+		echo "wrote $$out"; \
+	done
