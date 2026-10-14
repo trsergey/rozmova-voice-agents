@@ -1,5 +1,6 @@
 """LLM providers behind one streaming interface (ADR 0003)."""
 
+from rozmova_engine.providers.anthropic import AnthropicProvider
 from rozmova_engine.providers.base import (
     LLMProvider,
     Message,
@@ -22,6 +23,7 @@ from rozmova_engine.providers.registry import (
 from rozmova_engine.providers.retry import RetryPolicy
 
 __all__ = [
+    "AnthropicProvider",
     "LLMProvider",
     "Message",
     "OpenAICompatibleProvider",

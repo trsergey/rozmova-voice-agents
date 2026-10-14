@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Dialogue engine: flow executor, LLM providers, tools, RAG, eval runner."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "anthropic>=1.13,<2",
     "httpx2>=2.13,<3",
     "openai>=3.31,<4",
     "pydantic>=2.9",
