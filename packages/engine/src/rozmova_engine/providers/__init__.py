@@ -11,6 +11,7 @@ from rozmova_engine.providers.base import (
     ToolSpec,
     Usage,
 )
+from rozmova_engine.providers.openai_compat import OpenAICompatibleProvider
 from rozmova_engine.providers.registry import (
     ProviderConfig,
     ProviderFactory,
@@ -18,14 +19,17 @@ from rozmova_engine.providers.registry import (
     UnknownProviderError,
     registry,
 )
+from rozmova_engine.providers.retry import RetryPolicy
 
 __all__ = [
     "LLMProvider",
     "Message",
+    "OpenAICompatibleProvider",
     "ProviderConfig",
     "ProviderError",
     "ProviderFactory",
     "ProviderRegistry",
+    "RetryPolicy",
     "Role",
     "StreamEvent",
     "TextDelta",

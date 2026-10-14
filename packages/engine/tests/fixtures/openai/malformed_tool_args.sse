@@ -1,0 +1,7 @@
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1760450000,"model":"gpt-4.1-mini-2025-04-14","system_fingerprint":"fp_1","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_bal","type":"function","function":{"name":"get_balance","arguments":"{\"msisdn\": \"+38067"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1760450000,"model":"gpt-4.1-mini-2025-04-14","system_fingerprint":"fp_1","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}],"usage":null}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1760450000,"model":"gpt-4.1-mini-2025-04-14","system_fingerprint":"fp_1","choices":[],"usage":{"prompt_tokens":120,"completion_tokens":9,"total_tokens":129}}
+
+data: [DONE]
