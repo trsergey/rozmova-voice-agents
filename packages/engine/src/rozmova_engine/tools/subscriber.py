@@ -92,7 +92,15 @@ class NoArgs(BaseModel):
 class ActivateServiceArgs(BaseModel):
     model_config = _ARGS_CONFIG
 
-    service_id: str = Field(description="Код послуги з бази знань, наприклад `roaming_eu`.")
+    # The ids go into the JSON Schema as an enum, so the model picks a real one instead of
+    # guessing (`music_wave`); validation stays a plain string, so an unknown id still gets
+    # the handler's `unknown_service` answer with the known ids.
+    service_id: str = Field(
+        description="Код послуги: "
+        + "; ".join(f"`{offer.id}` — «{offer.name}»" for offer in SERVICES.values())
+        + ".",
+        json_schema_extra={"enum": list(SERVICES)},
+    )
 
 
 def _offer(offer: Offer) -> ToolResult:

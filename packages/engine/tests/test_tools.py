@@ -17,7 +17,7 @@ from rozmova_engine.tools import (
     demo_subscribers,
     subscriber_tools,
 )
-from rozmova_engine.tools.subscriber import SERVICES, TARIFFS
+from rozmova_engine.tools.subscriber import SERVICES, TARIFFS, ActivateServiceArgs
 
 KB_README = Path(__file__).resolve().parents[3] / "kb" / "README.md"
 DEMO = ToolContext(subscriber_id=DEMO_SUBSCRIBER_ID)
@@ -176,6 +176,17 @@ async def test_two_phase_tool_is_refused_by_plain_call(registry: ToolRegistry) -
 async def test_activate_service_requires_service_id(registry: ToolRegistry) -> None:
     result = await call(registry, "activate_service")
     assert result["error"] == "invalid_arguments"
+
+
+def test_activate_service_schema_lists_the_service_ids(registry: ToolRegistry) -> None:
+    # The model picks from these instead of guessing an id (first eval run: `music_wave`).
+    [spec] = registry.specs(["activate_service"])
+    assert spec.parameters == ActivateServiceArgs.model_json_schema()
+    service_id = ActivateServiceArgs.model_json_schema()["properties"]["service_id"]
+
+    assert service_id["enum"] == list(SERVICES)
+    for offer in SERVICES.values():
+        assert f"`{offer.id}` — «{offer.name}»" in service_id["description"]
 
 
 async def test_extra_arguments_are_rejected(registry: ToolRegistry) -> None:
