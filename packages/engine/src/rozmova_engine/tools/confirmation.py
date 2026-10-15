@@ -15,10 +15,16 @@ the same arguments, in a later turn than the one in which its price was announce
 
 So a service cannot be activated in the turn that names its price, a different service
 than the one announced cannot be activated, and an old "yes" cannot be reused later.
+
+4. The repeated call also needs the subscriber's message of that turn to be consent by
+   ``consent.consent`` (ADR 0015): short, a yes word, no negation, nothing imitating a
+   system message. Otherwise the tool quotes again with ``consent_missing`` and the
+   pending action moves to this turn, so a clear "так" next turn still works.
 """
 
 from rozmova_engine.providers import ToolCall
 from rozmova_engine.session import PendingAction, SessionState
+from rozmova_engine.tools.consent import consent
 from rozmova_engine.tools.registry import BoundCall, Quote, ToolContext, ToolRegistry, ToolResult
 
 CONFIRMATION_REQUIRED = "confirmation_required"
@@ -39,21 +45,41 @@ async def call_tool(
 
     args = bound.normalized_args()
     pending = state.pending_action
+    missing: str | None = None
     if (
         pending is not None
         and pending.name == bound.tool.name
         and pending.args == args
         and pending.turn < state.turn
     ):
-        state.pending_action = None
-        return await registry.execute(bound, ctx)
+        verdict = consent(_utterance(state))
+        if verdict.given:
+            state.pending_action = None
+            return await registry.execute(bound, ctx)
+        missing = verdict.reason
 
     quote = await registry.quote(bound, ctx)
     if not isinstance(quote, Quote):
         # Nothing to confirm (unknown service, already active, error): answer as is.
         return quote
     state.pending_action = PendingAction(name=bound.tool.name, args=args, turn=state.turn)
-    return {"status": CONFIRMATION_REQUIRED, **quote.details}
+    result: ToolResult = {"status": CONFIRMATION_REQUIRED, **quote.details}
+    if missing is not None:
+        result["consent_missing"] = (
+            f"Not activated: {missing}. Repeat the price and ask the subscriber to answer "
+            "yes or no; do not say that an error happened."
+        )
+    return result
+
+
+def _utterance(state: SessionState) -> str:
+    """The subscriber's message of the current turn; empty if there is none."""
+    for entry in reversed(state.history):
+        if entry.turn != state.turn:
+            break
+        if entry.message.role == "user":
+            return entry.message.content
+    return ""
 
 
 def finish_turn(state: SessionState) -> None:

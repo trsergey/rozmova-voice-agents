@@ -1,6 +1,6 @@
 # ADR 0013: Two-phase confirmation of side-effect tools enforced in engine code
 
-- Status: Accepted
+- Status: Accepted, amended by [ADR 0015](0015-consent-checked-in-code.md)
 - Date: 2026-10-14
 
 ## Context
