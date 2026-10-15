@@ -1,0 +1,59 @@
+# Every PR and every push to main: lint, tests (unit + integration on Docker), contracts.
+# Integration tests start PostgreSQL (pgvector) and Redis with testcontainers, the same
+# code path as locally; GitHub's Ubuntu runners have Docker.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint (ruff, mypy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install (uv.lock must be up to date)
+        run: uv sync --all-packages --locked
+      - run: make lint
+
+  test:
+    name: test (pytest, PostgreSQL and Redis via testcontainers, migrations up/down)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --locked
+      - run: uv run pytest
+
+  contracts:
+    name: contracts (JSON Schema and TS types committed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: uv sync --all-packages --locked
+      - run: make schemas
+      - name: Generated files match the commit
+        run: git diff --exit-code packages/contracts || (echo "::error::run 'make schemas' and commit the result" && exit 1)

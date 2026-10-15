@@ -1,5 +1,7 @@
 # Rozmova
 
+[![CI](https://github.com/trsergey/rozmova-voice-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/trsergey/rozmova-voice-agents/actions/workflows/ci.yml)
+
 A voice-agent platform for telecom subscriber support. The MVP is a text channel over
 WebSocket with a visual flow editor, LLM function calling, RAG over a knowledge base
 and evals in CI.

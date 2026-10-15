@@ -25,4 +25,7 @@ def _docker_available() -> bool:
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
     if item.get_closest_marker("integration") and not _docker_available():
+        # Locally a skip is fine; in CI it would hide that the integration tests never ran.
+        if os.environ.get("CI"):
+            pytest.fail("Docker is not available in CI; integration tests cannot run")
         pytest.skip("Docker is not available")
