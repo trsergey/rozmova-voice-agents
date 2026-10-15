@@ -11,16 +11,22 @@ import asyncio
 import os
 from types import FrameType
 
+import structlog
 import uvicorn
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from gateway.app import create_app
 from gateway.bots import DemoKeySettings, Providers, PublishedBotLoader
 from gateway.calls import Calls
-from rozmova_core.db import create_engine
+from rozmova_core.db import create_engine, create_session_factory
 from rozmova_core.log import configure_logging
 from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
+from rozmova_engine.rag.answer import KnowledgeBase, KnowledgeSearch, UnavailableKnowledgeBase
+from rozmova_engine.rag.embeddings import OpenAIEmbedder
+
+log = structlog.get_logger(__name__)
 
 # SDD: ping every 15 s; a client that misses a pong for as long is disconnected.
 WS_PING_INTERVAL = 15.0
@@ -66,15 +72,29 @@ def serve(app: FastAPI, calls: Calls, *, host: str, port: int) -> GatewayServer:
     return GatewayServer(config, calls)
 
 
+def knowledge_base(
+    settings: Settings, demo: DemoKeySettings, engine: AsyncEngine
+) -> KnowledgeSearch:
+    """Query embeddings use ``OPENAI_API_KEY``, or the demo LLM key when it is an OpenAI key
+    (one key serves both on the demo)."""
+    key = settings.openai_api_key or (demo.api_key if demo.provider == "openai" else None)
+    if key is None:
+        log.warning("kb_unavailable", reason="no OpenAI key for query embeddings")
+        return UnavailableKnowledgeBase("no OpenAI key for query embeddings")
+    embedder = OpenAIEmbedder.create(key, settings.embedding_model)
+    return KnowledgeBase(create_session_factory(engine), embedder)
+
+
 def build() -> GatewayServer:
     settings = Settings()
     configure_logging(settings)
     redis = create_redis(settings)
-    loader = PublishedBotLoader(
-        redis, create_engine(settings), Providers.from_settings(DemoKeySettings())
-    )
+    demo = DemoKeySettings()
+    # One pool for bots and the knowledge base; the loader disposes it on shutdown.
+    engine = create_engine(settings)
+    loader = PublishedBotLoader(redis, engine, Providers.from_settings(demo))
     calls = Calls()
-    app = create_app(loader, redis, settings, calls)
+    app = create_app(loader, redis, settings, calls, knowledge_base(settings, demo, engine))
     # A container service listens on all interfaces.
     return serve(app, calls, host="0.0.0.0", port=int(os.environ.get("PORT", "8001")))  # noqa: S104
 

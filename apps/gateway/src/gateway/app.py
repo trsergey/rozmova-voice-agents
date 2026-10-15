@@ -12,7 +12,7 @@ A new call runs on the bot's live version; a resumed call keeps the version it s
 (``bot_version`` in its saved state), even if a newer one was published meanwhile.
 ``?draft=true`` runs the draft instead, for debug tickets only (the admin's test console).
 
-Not here yet: the knowledge base for ``kb_answer`` nodes (ROZ-43).
+``kb`` answers ``kb_answer`` nodes and backs the ``search_knowledge_base`` tool (ROZ-43).
 """
 
 import asyncio
@@ -34,6 +34,7 @@ from rozmova_core import tickets
 from rozmova_core.log import log_context
 from rozmova_core.settings import Settings
 from rozmova_engine.flow import FlowExecutor
+from rozmova_engine.rag.answer import KnowledgeBaseAnswerer, KnowledgeSearch, knowledge_tools
 from rozmova_engine.session import SessionState, SessionStateError
 from rozmova_engine.tool_loop import ToolLoop
 from rozmova_engine.tools import (
@@ -78,9 +79,14 @@ def client_ip(websocket: WebSocket) -> str | None:
 
 
 def create_app(
-    loader: BotLoader, redis: Redis, settings: Settings, calls: Calls | None = None
+    loader: BotLoader,
+    redis: Redis,
+    settings: Settings,
+    calls: Calls | None = None,
+    kb: KnowledgeSearch | None = None,
 ) -> FastAPI:
-    """The app owns ``redis`` and closes it on shutdown; ``calls`` is for draining it."""
+    """The app owns ``redis`` and ``kb`` and closes them on shutdown; ``calls`` is for
+    draining it. Without ``kb`` a ``kb_answer`` node is a flow error (handoff)."""
     calls = calls if calls is not None else Calls()
     if settings.ticket_secret is None:
         raise RuntimeError("ROZMOVA_TICKET_SECRET is required by the gateway")
@@ -89,7 +95,7 @@ def create_app(
 
     limiter = RateLimiter(redis, settings)
     billing = MockBilling(demo_subscribers())
-    registry = ToolRegistry(subscriber_tools(billing))
+    registry = ToolRegistry([*subscriber_tools(billing), *(knowledge_tools(kb) if kb else [])])
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -101,6 +107,9 @@ def create_app(
             await asyncio.wait([watch])
             await loader.aclose()
             await redis.aclose()
+            close_kb = getattr(kb, "aclose", None)
+            if close_kb is not None:
+                await close_kb()
 
     async def admit(
         websocket: WebSocket, bot_id: UUID, call_id: UUID | None, token: str | None
@@ -234,7 +243,8 @@ def create_app(
             await session.emit(event)
 
         loop = ToolLoop(bot.provider, bot.model, registry, ctx, emit)
-        executor = FlowExecutor(bot.flow, loop, registry, ctx, emit)
+        answerer = KnowledgeBaseAnswerer(kb, loop, emit) if kb is not None else None
+        executor = FlowExecutor(bot.flow, loop, registry, ctx, emit, kb=answerer)
         session = Session(
             websocket,
             executor,

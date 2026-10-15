@@ -32,6 +32,8 @@ from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
 from rozmova_engine.providers import TextDelta, ToolCall
 from rozmova_engine.providers.fake import Delay, FakeProvider, text_turn
+from rozmova_engine.rag.answer import KnowledgeSearch
+from rozmova_engine.rag.search import SearchHit, SearchResult
 from rozmova_engine.session import INTERRUPTED_MARK
 
 FLOW = FlowGraph.model_validate_json(
@@ -53,10 +55,11 @@ class Gateway:
         loader: BotLoader,
         redis: Callable[[], Redis] | None = None,
         calls: Calls | None = None,
+        kb: KnowledgeSearch | None = None,
     ) -> None:
         server = FakeServer()
         self.redis = redis or (lambda: FakeAsyncRedis(server=server, decode_responses=True))
-        self.app = create_app(loader, self.redis(), SETTINGS, calls)
+        self.app = create_app(loader, self.redis(), SETTINGS, calls, kb)
 
     def ticket(self, bot_id: UUID, call_id: UUID, *, debug: bool = False) -> str:
         async def issue() -> str:
@@ -479,3 +482,87 @@ def test_a_user_gets_at_most_3_open_calls(gateway: Gateway) -> None:
         open_calls.close()  # the three calls end and free their places
         with connect(http) as fifth:
             assert fifth.receive_json()["type"] == "session_started"
+
+
+# --- S2: answers from the knowledge base (ROZ-43) -----------------------------------------
+
+BEZLIM_CHUNK = SearchHit(
+    chunk_id=UUID(int=1),
+    document_id=UUID(int=2),
+    document_title="Тариф «Безлім»",
+    source_path="tariffs/bezlim.md",
+    section="Вартість тарифу «Безлім»",
+    text="# Тариф «Безлім»\n\n## Вартість тарифу «Безлім»\n\n395 грн на місяць.",
+    score=0.03,
+    similarity=0.6,
+    vector_rank=1,
+    text_rank=1,
+)
+
+
+class OneChunkKB:
+    """Finds the «Безлім» chunk for questions that name it; nothing otherwise."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def search(self, query: str, *, top_k: int, min_similarity: float) -> SearchResult:
+        found = "безлім" in query.lower()
+        return SearchResult(
+            query=query, hits=[BEZLIM_CHUNK] if found else [], best_similarity=0.6 if found else 0.2
+        )
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def tariff_call(provider: FakeProvider, question: str) -> list[dict[str, Any]]:
+    """S2 on the demo flow: `assist` routes to `tariff_kb`; returns the question's events."""
+    kb = OneChunkKB()
+    gateway = Gateway(StaticBotLoader(FLOW, provider, "gpt-4.1-mini"), kb=kb)
+    bot_id, call_id = uuid4(), uuid4()
+    path = url(bot_id, call_id, gateway.ticket(bot_id, call_id, debug=True))
+    with TestClient(gateway.app) as http, http.websocket_connect(path) as ws:
+        ws.receive_json()
+        until_turn_end(ws)
+        ws.send_json({"type": "user_text", "text": question})
+        events = until_turn_end(ws)
+        ws.send_json({"type": "hangup"})
+        ws.receive_json()
+    assert kb.closed
+    return events
+
+
+def test_tariff_question_is_answered_from_the_knowledge_base_with_sources() -> None:
+    route = [ToolCall(id="r1", name="route", arguments={"name": "tariff"})]
+    provider = FakeProvider([route, text_turn("«Безлім» коштує 395 грн на місяць [1].")])
+
+    events = tariff_call(provider, "скільки коштує Безлім?")
+
+    nodes = [e["node_id"] for e in events if e["type"] == "node_enter"]
+    assert nodes == ["assist", "tariff_kb"]  # back to `assist`, which waits silently
+    said = "".join(e["text"] for e in events if e["type"] == "assistant_delta")
+    assert said == "«Безлім» коштує 395 грн на місяць [1]."
+    assert events[-1]["sources"] == [
+        {
+            "marker": 1,
+            "chunk_id": str(UUID(int=1)),
+            "document_id": str(UUID(int=2)),
+            "document_title": "Тариф «Безлім»",
+            "section": "Вартість тарифу «Безлім»",
+        }
+    ]
+    # The second LLM call got the numbered chunk.
+    assert "[1] # Тариф «Безлім»" in provider.calls[1].messages[1].content
+
+
+def test_unknown_tariff_gets_the_not_found_reply() -> None:
+    route = [ToolCall(id="r1", name="route", arguments={"name": "tariff"})]
+    provider = FakeProvider([route])
+
+    events = tariff_call(provider, "що входить у тариф Космос?")
+
+    said = "".join(e["text"] for e in events if e["type"] == "assistant_delta")
+    assert said.startswith("У базі знань немає відповіді")
+    assert events[-1]["sources"] == []
+    assert len(provider.calls) == 1  # no LLM call for the answer

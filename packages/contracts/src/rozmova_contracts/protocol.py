@@ -178,6 +178,7 @@ ErrorCode = Literal[
     "turn_timeout",
     "llm_unavailable",
     "tool_failed",
+    "kb_unavailable",
     "rate_limited",
     "internal",
 ]

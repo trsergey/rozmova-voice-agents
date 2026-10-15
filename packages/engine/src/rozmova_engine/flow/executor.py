@@ -60,14 +60,15 @@ _WHOLE_SLOT = re.compile(r"\{([\w.]+)\}")
 class KBReply:
     text: str
     sources: list[protocol.Source] = field(default_factory=list)
+    usage: Usage = field(default_factory=lambda: Usage(input_tokens=0, output_tokens=0))
 
 
 class KBAnswerer(Protocol):
-    """Answers a ``kb_answer`` node from the knowledge base (ROZ-43).
+    """Answers a ``kb_answer`` node from the knowledge base (``rag.answer``, ROZ-43).
 
-    It streams its reply through ``emit`` itself and returns the text and the cited
-    sources; the executor records the reply in history. The query is the last user
-    message in ``state.history``.
+    It streams its reply through ``emit``, records it in ``state.history`` and returns the
+    text, the cited sources and the LLM usage. The query is the last user message in
+    ``state.history``.
     """
 
     async def answer(
@@ -189,6 +190,7 @@ class FlowExecutor:
                     case KBAnswerNode():
                         utterance = False
                         reply = await self._answer_from_kb(node, state, timer)
+                        outcome.add_usage(reply.usage)
                         outcome.add_text(reply.text)
                         outcome.sources.extend(reply.sources)
                         if (after := self._default.get(node.id)) is None:
@@ -234,11 +236,7 @@ class FlowExecutor:
     ) -> KBReply:
         if self._kb is None:
             raise FlowError(f"node {node.id!r} needs the knowledge base, which is not set up")
-        reply = await self._kb.answer(node, state, timer)
-        if reply.text:
-            message = Message(role="assistant", content=reply.text)
-            state.history.append(HistoryEntry(turn=state.turn, message=message))
-        return reply
+        return await self._kb.answer(node, state, timer)
 
     async def _run_tool_node(self, node: ToolNode, state: SessionState, timer: TurnTimer) -> None:
         args = {name: _render(value, state.slots) for name, value in node.data.args.items()}

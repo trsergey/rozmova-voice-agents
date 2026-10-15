@@ -18,7 +18,7 @@ from rozmova_engine.flow.executor import (
 )
 from rozmova_engine.providers import Message, ToolCall
 from rozmova_engine.providers.fake import FakeProvider, Step, text_turn
-from rozmova_engine.session import PendingAction, SessionState
+from rozmova_engine.session import HistoryEntry, PendingAction, SessionState
 from rozmova_engine.timings import TurnTimer
 from rozmova_engine.tool_loop import ROUTE_TOOL, ToolLoop
 from rozmova_engine.tools import (
@@ -68,6 +68,8 @@ class FakeKB:
         text = BEZLIM_ANSWER if found else node.data.not_found_reply
         timer.first_text()
         await self.emit(protocol.AssistantDelta(turn_id=state.turn, text=text))
+        message = Message(role="assistant", content=text)
+        state.history.append(HistoryEntry(turn=state.turn, message=message))
         return KBReply(text, BEZLIM_SOURCES if found else [])
 
 

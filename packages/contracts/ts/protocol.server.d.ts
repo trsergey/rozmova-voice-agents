@@ -149,7 +149,14 @@ export interface Handoff {
  */
 export interface Error {
   type: "error";
-  code: "invalid_message" | "turn_timeout" | "llm_unavailable" | "tool_failed" | "rate_limited" | "internal";
+  code:
+    | "invalid_message"
+    | "turn_timeout"
+    | "llm_unavailable"
+    | "tool_failed"
+    | "kb_unavailable"
+    | "rate_limited"
+    | "internal";
   message: string;
   retryable: boolean;
 }

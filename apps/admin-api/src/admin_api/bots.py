@@ -22,12 +22,14 @@ from rozmova_contracts.flow import FlowGraph
 from rozmova_core.models import Bot, BotVersion
 from rozmova_engine.flow import ValidationResult, validate_flow
 from rozmova_engine.providers import registry as providers
+from rozmova_engine.rag.answer import SEARCH_TOOL
 from rozmova_engine.tools import MockBilling, ToolRegistry, subscriber_tools
 
 log = structlog.get_logger(__name__)
 
-# The tools a flow may call: the gateway registers the same set (bound to real billing).
-KNOWN_TOOLS = ToolRegistry(subscriber_tools(MockBilling([]))).names
+# The tools a flow may call: the gateway registers the same set (bound to real billing
+# and the knowledge base).
+KNOWN_TOOLS = ToolRegistry(subscriber_tools(MockBilling([]))).names | {SEARCH_TOOL}
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
