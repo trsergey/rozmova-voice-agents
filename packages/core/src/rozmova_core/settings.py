@@ -43,6 +43,9 @@ class Settings(BaseSettings):
 
     fernet_master_key: SecretStr | None = None
     ticket_secret: SecretStr | None = None
+    # Browser origins allowed to open the gateway WebSocket: the admin SPA (served by
+    # admin-api) and the Vite dev server. A JSON list in the environment.
+    allowed_origins: list[str] = ["http://localhost:8000", "http://localhost:5173"]
 
     # Standard OTel variable, read without the prefix so stock tooling keeps working.
     otel_exporter_otlp_endpoint: str | None = Field(

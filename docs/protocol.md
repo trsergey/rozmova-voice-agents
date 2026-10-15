@@ -29,9 +29,11 @@ WS /ws/calls/{bot_id}?call_id={uuid}&ticket={ticket}
 2. The client opens the WebSocket with the same `call_id` and the ticket. The admin test
    console also adds `?draft=true` to talk to the bot's draft instead of the published
    version.
-3. Before `accept()` the gateway checks the signature, the expiry, single use, that the
-   ticket matches `bot_id` and `call_id`, and the `Origin` header against the allowed
-   domains. On failure it closes with code `4401` (see [Close codes](#close-codes)).
+3. Before any session work the gateway checks the `Origin` header against the allowed
+   domains (a client without `Origin` is not a browser and is held by the ticket alone),
+   the signature, the expiry, that the ticket matches `bot_id` and `call_id`, and single
+   use. On failure it accepts the handshake and closes at once with code `4401` (see
+   [Close codes](#close-codes)); no message is sent first.
 4. On success the server sends `session_started`, then the greeting of the flow's `start`
    node as `assistant_delta` events.
 
@@ -285,11 +287,13 @@ The last message of a session; the server closes the connection after it.
 ## Close codes
 
 The protocol models do not define close codes; they are set by the gateway, per the SDD.
-The gateway is not implemented yet (as of ROZ-21), so this table is the target behaviour.
+Refusals are sent after `accept()`: closing before it makes the server answer the
+handshake with HTTP 403, and a browser would see only code `1006`.
 
 | Code | When |
 | --- | --- |
-| `4401` | The ticket is invalid, expired, already used, does not match `bot_id`/`call_id`, or the `Origin` is not allowed. Sent before any message. |
+| `4401` | The ticket is missing, invalid, expired, already used, does not match `bot_id`/`call_id`, or the `Origin` is not allowed. Get a new ticket. Sent before any message. |
+| `4404` | The ticket is valid but there is no such bot. Sent before any message. |
 | `1013` | Backpressure: the client did not read and the server's outbound queue stayed full for more than 10 s. |
 
 During graceful shutdown the gateway refuses new connections on `/ws` with HTTP `503`

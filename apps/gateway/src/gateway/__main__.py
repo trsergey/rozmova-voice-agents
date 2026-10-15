@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from gateway.app import create_app
 from gateway.bots import DemoBotSettings, StaticBotLoader
 from rozmova_core.log import configure_logging
+from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
 
 # SDD: ping every 15 s; a client that misses a pong for as long is disconnected.
@@ -16,8 +17,10 @@ WS_PING_TIMEOUT = 15.0
 
 
 def build() -> FastAPI:
-    configure_logging(Settings())
-    return create_app(StaticBotLoader.from_settings(DemoBotSettings()))
+    settings = Settings()
+    configure_logging(settings)
+    loader = StaticBotLoader.from_settings(DemoBotSettings())
+    return create_app(loader, create_redis(settings), settings)
 
 
 def main() -> None:

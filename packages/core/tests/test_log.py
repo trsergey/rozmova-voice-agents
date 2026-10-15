@@ -31,7 +31,10 @@ def _records(out: io.StringIO) -> list[dict[str, Any]]:
 def test_records_are_json_with_call_context(out: io.StringIO) -> None:
     log = structlog.get_logger("test")
 
-    with log_context(call_id="c-1", bot_id="b-1", bot_version=3), log_context(turn_id="t-7"):
+    with (
+        log_context(call_id="c-1", bot_id="b-1", bot_version=3, user_id="u-1"),
+        log_context(turn_id="t-7"),
+    ):
         log.info("turn_started", node="greeting")
     log.info("after")
 
@@ -41,8 +44,9 @@ def test_records_are_json_with_call_context(out: io.StringIO) -> None:
     assert inside["logger"] == "test"
     assert "timestamp" in inside
     assert inside["node"] == "greeting"
-    assert {k: inside[k] for k in ("call_id", "bot_id", "bot_version", "turn_id")} == {
+    assert {k: inside[k] for k in ("call_id", "bot_id", "bot_version", "turn_id", "user_id")} == {
         "call_id": "c-1",
+        "user_id": "u-1",
         "bot_id": "b-1",
         "bot_version": 3,
         "turn_id": "t-7",

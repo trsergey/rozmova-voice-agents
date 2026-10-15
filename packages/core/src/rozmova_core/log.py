@@ -103,6 +103,7 @@ def log_context(
     bot_id: str | None = None,
     bot_version: int | None = None,
     turn_id: str | None = None,
+    user_id: str | None = None,
 ) -> Iterator[None]:
     """Bind call identifiers for log records emitted in the current task.
 
@@ -114,6 +115,7 @@ def log_context(
         "bot_id": bot_id,
         "bot_version": bot_version,
         "turn_id": turn_id,
+        "user_id": user_id,
     }
     with structlog.contextvars.bound_contextvars(
         **{k: v for k, v in values.items() if v is not None}
