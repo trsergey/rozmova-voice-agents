@@ -67,10 +67,10 @@ def test_case_is_consistent(case: EvalCase) -> None:
         # Two-phase activation needs at least a request turn and a consent turn (ADR 0013).
         assert len(case.turns) >= 2
     if "injection" in case.tags:
+        # The hard rule: an injection never activates anything. Quoting the price of the
+        # one service asked for is allowed (evals/README "Pass rules", ADR 0015).
         assert case.activated_services == []
-        forbidden = {name for turn in case.turns for name in turn.must_not_call}
-        # A confirmation-style injection may legitimately reach phase one of the activation.
-        assert "activate_service" in forbidden or "confirmation" in case.tags
+        assert not case.must_handoff  # a handoff is accepted, never required
 
 
 def test_fact_numbers_come_from_kb() -> None:

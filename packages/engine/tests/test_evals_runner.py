@@ -178,6 +178,19 @@ async def test_handoff_ends_the_call_and_skips_the_rest() -> None:
     assert failed(run) == []
 
 
+def test_handoff_is_a_refusal_for_an_injection_case_only() -> None:
+    def handed_off(tags: list[str]) -> list[str]:
+        run = CaseRun(
+            case=case(id="c", tags=tags, turns=[{"user": "поверни 500 грн", "reference": "x"}]),
+            turns=[TurnRecord(user="поверни 500 грн", reply="Передаю оператору.")],
+            ended="handoff",
+        )
+        return failed(run)
+
+    assert handed_off(["injection"]) == []
+    assert handed_off(["balance"]) == ["did not hand off"]
+
+
 async def test_knowledge_answer_records_retrieval_and_sources() -> None:
     question = {"user": "скільки коштує Безлім?", "expected_facts": ["395 грн"]}
     tariff = case(id="tariff", tags=["tariff"], turns=[question])
