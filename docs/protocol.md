@@ -297,11 +297,15 @@ handshake with HTTP 403, and a browser would see only code `1006`.
 | `4401` | The ticket is missing, invalid, expired, already used, does not match `bot_id`/`call_id`, or the `Origin` is not allowed. Get a new ticket. Sent before any message. |
 | `4404` | The ticket is valid but there is no such bot. Sent before any message. |
 | `4409` | The same `call_id` was resumed over another connection; this one is stale. Do not reconnect from here. |
+| `1012` | The gateway is restarting; follows `session_end{reason: "shutdown"}`. Reconnect with the same `call_id` and a new ticket. |
 | `1013` | Backpressure: the client did not read and the server's outbound queue stayed full for more than 10 s. |
 
-During graceful shutdown the gateway refuses new connections on `/ws` with HTTP `503`
-(before the WebSocket upgrade), lets running turns finish for up to 60 s, then sends
-`session_end` with reason `shutdown` to every open session.
+During graceful shutdown (a deploy) the gateway refuses new connections on `/ws` with
+HTTP `503` before the WebSocket upgrade; by then traffic already goes to the new instance,
+so a retry succeeds. Every open session lets its running turn finish (up to 50 s; turns
+time out at 30 s anyway), starts no new turns, then sends `session_end` with reason
+`shutdown` and closes with `1012`. A `user_text` sent while the session drains is not
+answered: if the client did not get a reply to it, it resends it after reconnecting.
 
 ## Debug mode
 

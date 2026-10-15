@@ -4,7 +4,7 @@ The endpoint admits a connection only with a valid ticket (``admit``), resumes t
 state from Redis if it is there (FR-21), then wires one ``Session``: the bot from the
 ``BotLoader``, the mock subscriber tools over one process-wide billing, the tool loop and
 the flow executor. Run it with ``python -m gateway`` (uvicorn with WebSocket ping every
-15 s).
+15 s). While the process drains for a shutdown (``Calls``), new calls get HTTP 503.
 
 Not here yet: the knowledge base for ``kb_answer`` nodes (ROZ-43). A resumed call runs on
 the bot's current version; loading the version it started on comes with ROZ-51.
@@ -15,10 +15,11 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 import structlog
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Response, WebSocket
 from redis.asyncio import Redis
 
 from gateway.bots import BotLoader
+from gateway.calls import Calls
 from gateway.session import Session
 from gateway.state_store import SessionStore
 from rozmova_contracts import protocol
@@ -56,8 +57,11 @@ async def refuse(websocket: WebSocket, code: int) -> None:
     await websocket.close(code=code)
 
 
-def create_app(loader: BotLoader, redis: Redis, settings: Settings) -> FastAPI:
-    """The app owns ``redis`` and closes it on shutdown."""
+def create_app(
+    loader: BotLoader, redis: Redis, settings: Settings, calls: Calls | None = None
+) -> FastAPI:
+    """The app owns ``redis`` and closes it on shutdown; ``calls`` is for draining it."""
+    calls = calls if calls is not None else Calls()
     if settings.ticket_secret is None:
         raise RuntimeError("ROZMOVA_TICKET_SECRET is required by the gateway")
     secret = settings.ticket_secret.get_secret_value()
@@ -133,6 +137,10 @@ def create_app(loader: BotLoader, redis: Redis, settings: Settings) -> FastAPI:
         call_id: UUID | None = None,
         ticket: str | None = None,
     ) -> None:
+        if calls.draining:
+            # Before the upgrade, so the client knows to retry (the new instance answers).
+            await websocket.send_denial_response(Response(status_code=503))
+            return
         grant = await admit(websocket, bot_id, call_id, ticket)
         if grant is None:
             await refuse(websocket, UNAUTHORIZED)
@@ -169,7 +177,7 @@ def create_app(loader: BotLoader, redis: Redis, settings: Settings) -> FastAPI:
             bot_version=bot.bot_version,
             user_id=grant.user_id,
         )
-        with bound:
+        with bound, calls.track(session):
             log.info("session_opened", resumed=resumed, turn=state.turn)
             await session.run()
 

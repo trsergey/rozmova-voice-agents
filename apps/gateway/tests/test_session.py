@@ -467,3 +467,73 @@ async def test_superseded_session_closes_with_4409() -> None:
 
     assert old.transport.closed_with == 4409
     assert "turn_end" not in old.transport.types()[3:]
+
+
+# --- drain for a shutdown (FR-21) -------------------------------------------------------
+
+
+def soon(seconds: float) -> float:
+    return asyncio.get_running_loop().time() + seconds
+
+
+async def test_idle_session_ends_with_shutdown_and_keeps_its_state() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    async with Call(redis=redis) as call:
+        call.session.drain(soon(5))
+        await call.ended()
+
+    assert call.transport.sent[-1] == {"type": "session_end", "reason": "shutdown"}
+    assert call.transport.closed_with == 1012
+    assert await saved(redis, call) is not None  # the client resumes on the new instance
+
+
+async def test_drain_lets_the_running_turn_finish() -> None:
+    reply: list[Step] = [TextDelta(text="На рахунку "), Delay(0.1), TextDelta(text="120 грн.")]
+    async with Call(reply) as call:
+        call.transport.send({"type": "user_text", "text": "баланс"})
+        await call.transport.until("assistant_delta", 2)
+        call.session.drain(soon(5))
+        await call.ended()
+
+    assert call.transport.types()[-3:] == ["assistant_delta", "turn_end", "session_end"]
+    assert "turn_cancelled" not in call.transport.types()
+    assert call.transport.closed_with == 1012
+
+
+async def test_turn_still_running_at_the_deadline_is_cancelled_and_saved() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    long_reply: list[Step] = [TextDelta(text="Тарифи у нас такі: "), Delay(10)]
+    async with Call(long_reply, redis=redis) as call:
+        call.transport.send({"type": "user_text", "text": "тарифи"})
+        await call.transport.until("assistant_delta", 2)
+        call.session.drain(soon(0.05))
+        await call.ended()
+
+    assert call.transport.types()[-2:] == ["turn_cancelled", "session_end"]
+    state = await saved(redis, call)
+    assert state is not None
+    assert state.history[-1].interrupted
+
+
+async def test_no_new_turn_starts_while_draining() -> None:
+    reply: list[Step] = [TextDelta(text="Зараз "), Delay(0.1), TextDelta(text="подивлюсь.")]
+    async with Call(reply) as call:
+        call.transport.send({"type": "user_text", "text": "раз"})
+        await call.transport.until("assistant_delta", 2)
+        call.session.drain(soon(5))
+        call.transport.send({"type": "user_text", "text": "два"})
+        await call.ended()
+
+    assert len(call.provider.calls) == 1  # "два" never reached the model
+    assert call.transport.sent[-1]["reason"] == "shutdown"
+
+
+async def test_call_that_ends_during_the_drain_ends_as_usual() -> None:
+    async with Call([Delay(0.1), *route("bye")]) as call:
+        call.transport.send({"type": "user_text", "text": "до побачення"})
+        await asyncio.sleep(0.02)
+        call.session.drain(soon(5))
+        await call.ended()
+
+    assert call.transport.sent[-1] == {"type": "session_end", "reason": "completed"}
+    assert call.transport.closed_with == 1000

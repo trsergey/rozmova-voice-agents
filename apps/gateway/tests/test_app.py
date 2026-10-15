@@ -1,6 +1,13 @@
 """End to end over a real WebSocket through FastAPI's TestClient."""
 
 import asyncio
+import contextlib
+import json
+import os
+import signal
+import socket
+import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -8,14 +15,17 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+import websockets
 from fakeredis import FakeAsyncRedis, FakeServer
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from redis.asyncio import Redis
+from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from gateway.app import create_app
 from gateway.bots import BotLoader, BotRuntime, StaticBotLoader
+from gateway.calls import Calls
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import tickets
 from rozmova_core.redis_client import create_redis
@@ -40,10 +50,15 @@ class Gateway:
     loops); by default all of them share one in-memory server.
     """
 
-    def __init__(self, loader: BotLoader, redis: Callable[[], Redis] | None = None) -> None:
+    def __init__(
+        self,
+        loader: BotLoader,
+        redis: Callable[[], Redis] | None = None,
+        calls: Calls | None = None,
+    ) -> None:
         server = FakeServer()
         self.redis = redis or (lambda: FakeAsyncRedis(server=server, decode_responses=True))
-        self.app = create_app(loader, self.redis(), SETTINGS)
+        self.app = create_app(loader, self.redis(), SETTINGS, calls)
 
     def ticket(self, bot_id: UUID, call_id: UUID, *, debug: bool = False) -> str:
         async def issue() -> str:
@@ -259,3 +274,87 @@ def test_reconnect_resumes_the_call_on_real_redis(redis_url: str) -> None:
         StaticBotLoader(FLOW, provider, "gpt-4.1-mini"), redis=lambda: create_redis(settings)
     )
     reconnect_after_a_drop_mid_turn(gateway, provider)
+
+
+# --- drain for a shutdown (FR-21) -------------------------------------------------------
+
+
+def test_new_calls_get_503_while_draining() -> None:
+    calls = Calls()
+    gateway = Gateway(StaticBotLoader(FLOW, balance_provider(), "gpt-4.1-mini"), calls=calls)
+    bot_id, call_id = uuid4(), uuid4()
+    with TestClient(gateway.app) as http:
+        http.portal.call(calls.drain, 0.1)  # type: ignore[union-attr]
+        with (
+            pytest.raises(WebSocketDenialResponse) as info,
+            http.websocket_connect(url(bot_id, call_id, gateway.ticket(bot_id, call_id))),
+        ):
+            pass
+    assert info.value.status_code == 503
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+@pytest.mark.integration
+async def test_sigterm_drains_calls_and_exits_0(redis_url: str) -> None:
+    """A real process: SIGTERM mid-reply, the reply finishes, the call ends with
+    ``session_end{shutdown}`` and 1012, a new call gets 503, the process exits 0."""
+    port = free_port()
+    env = os.environ | {
+        "ROZMOVA_TICKET_SECRET": SECRET,
+        "ROZMOVA_REDIS_URL": redis_url,
+        "ROZMOVA_LOG_JSON": "true",
+    }
+    launcher = Path(__file__).with_name("slow_llm_gateway.py")
+    proc = subprocess.Popen(  # noqa: ASYNC220, S603 - the test's own launcher
+        [sys.executable, str(launcher), str(port)], env=env, stdout=subprocess.DEVNULL
+    )
+    redis = create_redis(Settings(redis_url=SecretStr(redis_url)))
+    try:
+        async with asyncio.timeout(20):  # until the server listens
+            while True:
+                with contextlib.suppress(OSError):
+                    _, writer = await asyncio.open_connection("127.0.0.1", port)
+                    writer.close()
+                    break
+                await asyncio.sleep(0.1)
+
+        async def ws_url() -> tuple[UUID, str]:
+            bot_id, call_id = uuid4(), uuid4()
+            token = await tickets.issue(
+                redis, SECRET, user_id="viewer-1", bot_id=bot_id, call_id=call_id
+            )
+            return call_id, f"ws://127.0.0.1:{port}{url(bot_id, call_id, token)}"
+
+        call_id, first = await ws_url()
+        _, second = await ws_url()
+        events: list[dict[str, Any]] = []
+        async with websockets.connect(first) as ws:
+            while not events or events[-1]["type"] != "turn_end":  # the greeting
+                events.append(json.loads(await ws.recv()))
+            await ws.send(json.dumps({"type": "user_text", "text": "баланс"}))
+            assert json.loads(await ws.recv())["text"] == "Зараз подивлюсь"
+
+            proc.send_signal(signal.SIGTERM)
+            await asyncio.sleep(0.3)  # the server notices the signal on its next tick
+            with pytest.raises(websockets.InvalidStatus) as refused:
+                await websockets.connect(second)
+            assert refused.value.response.status_code == 503
+
+            with contextlib.suppress(websockets.ConnectionClosed):
+                async for raw in ws:
+                    events.append(json.loads(raw))
+            assert ws.close_code == 1012
+        assert [e["type"] for e in events[-3:]] == ["assistant_delta", "turn_end", "session_end"]
+        assert events[-1]["reason"] == "shutdown"
+        assert await redis.exists(f"session:{call_id}") == 1  # resumable on the new instance
+
+        assert await asyncio.to_thread(proc.wait, 15) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        await redis.aclose()

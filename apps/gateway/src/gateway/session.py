@@ -21,6 +21,10 @@ The state goes to Redis (``SessionStore``, FR-21) after every turn, before its
 When the session closes, the state is saved again before the socket is closed (a turn
 cut off by a disconnect is in it as ``interrupted``), or dropped if the call is over. A
 resumed session starts with ``session_started{resumed: true, history}`` and no greeting.
+
+``drain`` (graceful shutdown on deploy, FR-21) lets the running turn finish until a
+deadline, starts no new turns, then sends ``session_end{shutdown}`` and closes with 1012.
+The state stays in Redis, so the client reconnects to the new instance and goes on.
 """
 
 import asyncio
@@ -51,6 +55,7 @@ FLUSH_TIMEOUT = 2.0
 # WebSocket close codes.
 NORMAL = 1000
 INTERNAL_ERROR = 1011
+SERVICE_RESTART = 1012
 TRY_AGAIN_LATER = 1013
 SUPERSEDED = 4409  # the same call_id was resumed over another connection
 
@@ -104,6 +109,8 @@ class Session:
         self._inbox: asyncio.Queue[str] = asyncio.Queue(maxsize=INBOX_SIZE)
         self._turn_timeout = turn_timeout
         self._current_turn: asyncio.Task[None] | None = None
+        self._draining = asyncio.Event()
+        self._drain_deadline = 0.0
 
     @property
     def call_id(self) -> UUID:
@@ -125,6 +132,14 @@ class Session:
                 protocol.Error(code="internal", message="The session failed unexpectedly.")
             )
         await self._finish(closing)
+
+    def drain(self, deadline: float) -> None:
+        """End the call for a shutdown once the running turn is done or ``deadline`` passes.
+
+        ``deadline`` is on the event loop clock (``loop.time()``).
+        """
+        self._drain_deadline = deadline
+        self._draining.set()
 
     async def emit(self, event: protocol.ProtocolMessage) -> None:
         """Queue an event for the client; debug-only events only in debug sessions."""
@@ -177,24 +192,50 @@ class Session:
         """Wait for an utterance; meanwhile surface the result of a turn that finishes.
 
         Waiting on both is what lets a finished turn close the session (``SessionClosing``)
-        and guarantees every turn's exception is retrieved.
+        and guarantees every turn's exception is retrieved. After a drain request no new
+        turn starts: utterances that arrive then are not answered.
         """
         while True:
+            if self._draining.is_set():
+                await self._end_for_shutdown()
             getter = asyncio.ensure_future(self._inbox.get())
-            waiting: set[asyncio.Future[object]] = {getter}  # type: ignore[arg-type]
+            drain = asyncio.ensure_future(self._draining.wait())
+            waiting: set[asyncio.Future[object]] = {getter, drain}  # type: ignore[arg-type]
             turn = self._current_turn
             if turn is not None:
                 waiting.add(turn)  # type: ignore[arg-type]
             try:
                 await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
             finally:
-                if not getter.done():
-                    getter.cancel()
+                for waiter in (getter, drain):
+                    if not waiter.done():
+                        waiter.cancel()
             if turn is not None and turn.done():
                 self._current_turn = None
                 _reraise(turn)
+            if drain.done():
+                # The drain wins over an utterance that arrived at the same moment: it
+                # would cancel the running turn. The client resends it after reconnecting.
+                if getter.done() and not getter.cancelled():
+                    log.info("utterance_dropped_on_drain")
+                continue
             if getter.done() and not getter.cancelled():
                 return getter.result()
+
+    async def _end_for_shutdown(self) -> None:
+        """Let the running turn finish until the drain deadline, then end the session.
+
+        A turn still running at the deadline is cancelled like an interrupted one: the
+        client gets ``turn_cancelled`` and the partial reply is saved as ``interrupted``.
+        Always raises ``SessionClosing``; a turn that ended the call ends it as usual.
+        """
+        turn = self._current_turn
+        if turn is not None:
+            remaining = self._drain_deadline - asyncio.get_running_loop().time()
+            await asyncio.wait({turn}, timeout=max(remaining, 0))
+            await self._cancel_current_turn()
+        await self.emit(protocol.SessionEnd(reason="shutdown"))
+        raise SessionClosing(code=SERVICE_RESTART)
 
     async def _cancel_current_turn(self, *, notify: bool = True) -> None:
         """Cancel the running turn, wait until it has cleaned up, tell the client."""
