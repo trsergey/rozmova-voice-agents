@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from admin_api import auth, errors
+from admin_api import access_codes, auth, errors
 from admin_api.seed import seed_admin
 from admin_api.sessions import SessionStore
 from rozmova_core.db import create_session_factory
@@ -34,6 +34,8 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.state.sessions = SessionStore(redis, settings.admin_session_ttl_seconds)
     errors.install(app)
     app.include_router(auth.router)
+    app.include_router(access_codes.login_router)
+    app.include_router(access_codes.router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

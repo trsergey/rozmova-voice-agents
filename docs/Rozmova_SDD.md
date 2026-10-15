@@ -337,6 +337,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | `ratelimit:{user_id}:{window}` | counter, TTL | Гейтвей | Гейтвей | Rate limit демо за користувачем із тікета |
 | `eval-job:{id}` | hash, TTL 1 год | Admin API | Admin API | Статус і прогрес прогону evals (FR-19) |
 | `admin-session:{sha256(id)}` | string (JSON), ковзний TTL 12 год | Admin API | Admin API | Сесія адмінки: користувач, роль, CSRF-токен; у cookie лише випадковий id; logout видаляє ключ (ADR 0014) |
+| `access-code-sessions:{code_id}` | set, TTL як у сесій | Admin API | Admin API | Ключі сесій, відкритих за кодом доступу; відкликання коду видаляє їх одразу |
 
 **Чому Stream, а не лише pub/sub.** Pub/sub не зберігає повідомлення: якщо Admin API перезапускається, події дзвінків губляться. Stream з consumer group дає at-least-once доставку й підтвердження `XACK`; запис у `call_events` ідемпотентний за id запису стріму. Повідомлення, що зависли в pending після падіння споживача, забираються через `XAUTOCLAIM` при старті. Pub/sub лишається там, де втрата не критична: сигнал про публікацію (гейтвей при старті все одно читає актуальну версію) і живий перегляд.
 
@@ -345,7 +346,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | Метод і шлях | Призначення | FR |
 | --- | --- | --- |
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Вхід адміна, сесійна cookie (httpOnly); `login` і `me` повертають роль і CSRF-токен | FR-14 |
-| `POST /auth/access-code` | Вхід за кодом доступу → роль `viewer` | FR-14 |
+| `POST /auth/access-code` | Вхід за кодом доступу → сесія з роллю `viewer`, прив'язана до коду; оновлює `last_used_at` | FR-14 |
 | `POST /calls/ticket` | Короткоживучий підписаний тікет для WebSocket гейтвея (`bot_id`, `call_id`, `debug`) | FR-14 |
 | `GET /bots`, `POST /bots` | Список і створення ботів | FR-12 |
 | `GET /bots/{id}/draft`, `PUT /bots/{id}/draft` | Чернетка: читання й збереження на місці | FR-7 |
@@ -360,7 +361,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | `WS /calls/live` | Живі події дзвінків | FR-13 |
 | `GET /ops/summary` | Дані сторінки «Операції» | FR-20 |
 | `POST /kb/reindex` | Переіндексація бази знань | FR-15 |
-| `GET /access-codes`, `POST /access-codes`, `DELETE /access-codes/{id}` | Видача й відкликання кодів доступу | FR-14 |
+| `GET /access-codes`, `POST /access-codes`, `DELETE /access-codes/{id}` | Видача й відкликання кодів доступу (лише `admin`); код показується один раз, у БД — SHA-256; відкликання завершує сесії коду | FR-14 |
 
 Прогін evals триває хвилини й коштує грошей, тому це фонова задача процесу Admin API (`asyncio.create_task` + статус у Redis), а не синхронний запит. Один активний прогін на бота; повторний запит повертає той самий `job_id`.
 

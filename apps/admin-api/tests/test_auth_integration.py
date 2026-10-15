@@ -1,16 +1,12 @@
 """Login, logout and the admin seed against a migrated PostgreSQL (testcontainers)."""
 
 import asyncio
-from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fakeredis import FakeAsyncRedis
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import Connection, delete, select
+from sqlalchemy import delete, select
 
 from admin_api.app import create_app
 from admin_api.passwords import hash_password
@@ -19,33 +15,8 @@ from rozmova_core.db import create_engine, create_session_factory
 from rozmova_core.models import User
 from rozmova_core.settings import Settings
 
-ALEMBIC_INI = Path(__file__).resolve().parents[3] / "packages/core/alembic.ini"
 EMAIL = "admin@example.com"
 PASSWORD = "first-password"  # noqa: S105 - a test-only password
-
-
-@pytest.fixture(scope="module")
-def database_url() -> Iterator[SecretStr]:
-    from testcontainers.community.postgres import PostgresContainer
-
-    with PostgresContainer("pgvector/pgvector:pg16", driver="asyncpg") as pg:
-        url = SecretStr(pg.get_connection_url())
-
-        async def migrate() -> None:
-            engine = create_engine(Settings(database_url=url))
-
-            def upgrade(connection: Connection) -> None:
-                config = Config(str(ALEMBIC_INI))
-                config.attributes["configure_logging"] = False
-                config.attributes["connection"] = connection
-                command.upgrade(config, "head")
-
-            async with engine.begin() as conn:
-                await conn.run_sync(upgrade)
-            await engine.dispose()
-
-        asyncio.run(migrate())
-        yield url
 
 
 @pytest.fixture
@@ -80,7 +51,7 @@ def test_login_session_and_logout(settings: Settings) -> None:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["user"]["email"] == EMAIL
+        assert body["user"]["name"] == EMAIL
         assert body["user"]["role"] == "admin"
         cookie = response.headers["set-cookie"]
         assert cookie.startswith(f"{COOKIE_NAME}=")

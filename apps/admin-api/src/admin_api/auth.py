@@ -1,4 +1,5 @@
-"""Admin login and logout, session cookie, CSRF and role checks (FR-14).
+"""Admin login and logout, session cookie, CSRF and role checks (FR-14). The demo's
+access-code login lives in ``access_codes`` and starts the same kind of session.
 
 Routes depend on ``CurrentSession`` to require a logged-in user and on ``require_admin``
 to forbid viewers. Both check CSRF for mutating methods: the SPA sends the token it got from
@@ -67,8 +68,10 @@ class LoginRequest(BaseModel):
 
 
 class UserOut(BaseModel):
+    """``id`` is the user's id, or the access code's id for a viewer who used a code."""
+
     id: str
-    email: str
+    name: str
     role: Role
 
 
@@ -77,9 +80,9 @@ class SessionOut(BaseModel):
     csrf_token: str
 
 
-def _session_out(session: AdminSession) -> SessionOut:
+def session_out(session: AdminSession) -> SessionOut:
     return SessionOut(
-        user=UserOut(id=session.user_id, email=session.email, role=session.role),
+        user=UserOut(id=session.subject_id, name=session.name, role=session.role),
         csrf_token=session.csrf_token,
     )
 
@@ -89,13 +92,39 @@ def _secure_cookie(settings: Settings) -> bool:
     return settings.env not in ("local", "test")
 
 
+async def start_session(
+    request: Request,
+    response: Response,
+    *,
+    name: str,
+    role: Role,
+    user_id: str | None = None,
+    access_code_id: str | None = None,
+) -> AdminSession:
+    store = _store(request)
+    if old := request.cookies.get(COOKIE_NAME):
+        await store.delete(old)
+    session_id, session = await store.create(
+        name=name, role=role, user_id=user_id, access_code_id=access_code_id
+    )
+    settings: Settings = request.app.state.settings
+    response.set_cookie(
+        COOKIE_NAME,
+        session_id,
+        httponly=True,
+        samesite="lax",
+        secure=_secure_cookie(settings),
+        path="/",
+    )
+    return session
+
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login")
 async def login(body: LoginRequest, request: Request, response: Response) -> SessionOut:
     factory: async_sessionmaker[AsyncSession] = request.app.state.db
-    settings: Settings = request.app.state.settings
     email = normalize_email(body.email)
     async with factory() as db:
         user = await db.scalar(select(User).where(User.email == email))
@@ -107,21 +136,12 @@ async def login(body: LoginRequest, request: Request, response: Response) -> Ses
         log.info("login_failed")
         raise ApiError(401, "invalid_credentials", "Wrong email or password.")
 
-    store = _store(request)
-    if old := request.cookies.get(COOKIE_NAME):
-        await store.delete(old)
     role: Role = "admin" if user.role == "admin" else "viewer"
-    session_id, session = await store.create(str(user.id), user.email, role)
-    response.set_cookie(
-        COOKIE_NAME,
-        session_id,
-        httponly=True,
-        samesite="lax",
-        secure=_secure_cookie(settings),
-        path="/",
+    session = await start_session(
+        request, response, name=user.email, role=role, user_id=str(user.id)
     )
     log.info("login", user_id=session.user_id, role=role)
-    return _session_out(session)
+    return session_out(session)
 
 
 @router.post("/logout", status_code=204)
@@ -132,9 +152,9 @@ async def logout(session: CurrentSession, request: Request, response: Response) 
     response.delete_cookie(
         COOKIE_NAME, httponly=True, samesite="lax", secure=_secure_cookie(settings), path="/"
     )
-    log.info("logout", user_id=session.user_id)
+    log.info("logout", user_id=session.user_id, access_code_id=session.access_code_id)
 
 
 @router.get("/me")
 async def me(session: CurrentSession) -> SessionOut:
-    return _session_out(session)
+    return session_out(session)

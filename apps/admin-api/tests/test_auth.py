@@ -44,7 +44,7 @@ async def test_session_store_create_get_delete() -> None:
     redis = FakeAsyncRedis(decode_responses=True)
     store = SessionStore(redis, ttl_seconds=600)
 
-    session_id, session = await store.create("u1", "a@example.com", "admin")
+    session_id, session = await store.create(name="a@example.com", role="admin", user_id="u1")
 
     assert await store.get(session_id) == session
     assert await store.get("forged") is None
@@ -88,7 +88,9 @@ class AdminApi:
     async def login_as(self, role: Role) -> str:
         """Start a session as ``role``; sets the cookie and returns the CSRF token."""
         store = SessionStore(FakeAsyncRedis(server=self.server, decode_responses=True), 600)
-        session_id, session = await store.create("u1", f"{role}@example.com", role)
+        session_id, session = await store.create(
+            name=f"{role}@example.com", role=role, user_id="u1"
+        )
         self.http.cookies.set(COOKIE_NAME, session_id)
         return session.csrf_token
 
@@ -119,7 +121,7 @@ async def test_me_returns_role_and_csrf_token(api: AdminApi) -> None:
     body = api.http.get("/auth/me").json()
 
     assert body == {
-        "user": {"id": "u1", "email": "viewer@example.com", "role": "viewer"},
+        "user": {"id": "u1", "name": "viewer@example.com", "role": "viewer"},
         "csrf_token": csrf,
     }
 

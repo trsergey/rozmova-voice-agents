@@ -42,8 +42,10 @@ Redis is already a hard dependency of both services.
 ## Consequences
 
 - Flushing Redis logs everyone out; acceptable for an admin tool.
-- ROZ-31 (access codes) creates the same session with role `viewer`; revoking a code must
-  also delete its sessions, so it will need an index from code to session keys.
+- Access-code logins (ROZ-31) create the same session with role `viewer` and
+  `access_code_id` instead of `user_id`. Each code has an index set
+  `access-code-sessions:{code_id}` of its session keys, so revoking the code deletes them
+  at once.
 - Endpoints that change data depend on `require_admin`; read endpoints on `CurrentSession`.
 - No rate limit on `/auth/login` yet: one admin with a long password on the demo. Revisit
   before the URL is shared widely.
