@@ -66,7 +66,7 @@ jobs:
         run: git diff --exit-code packages/contracts || (echo "::error::run 'make schemas' and commit the result" && exit 1)
 
   images:
-    name: image ${{ matrix.target }} (build; push to GHCR on main)
+    name: image ${{ matrix.target }} (build; push to GHCR except on PRs)
     needs: [lint, test, contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
