@@ -1,6 +1,8 @@
-"""``POST /calls/ticket`` on a fake Redis: the ticket is the one the gateway accepts."""
+"""``POST /calls/ticket`` against a migrated PostgreSQL (with the seeded demo bot) and a
+fake Redis: the ticket is the one the gateway accepts."""
 
 from collections.abc import Iterator
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -13,18 +15,27 @@ from admin_api.app import create_app
 from admin_api.calls import ws_url
 from admin_api.sessions import COOKIE_NAME, CSRF_HEADER, Role, SessionStore
 from rozmova_core import tickets
-from rozmova_core.db import create_engine
+from rozmova_core.db import create_engine, create_session_factory
+from rozmova_core.models import Bot
 from rozmova_core.settings import Settings
 
 SECRET = "test-ticket-secret"  # noqa: S105 - a test-only HMAC key
-SETTINGS = Settings(
-    env="test",
-    database_url=SecretStr("postgresql+asyncpg://u:p@nowhere:5432/none"),
-    demo_seed=False,
-    ticket_secret=SecretStr(SECRET),
-    gateway_public_url="https://gateway.example/",
-)
-BOT_ID = UUID("00000000-0000-0000-0000-0000000000b1")
+BOT_ID = UUID("00000000-0000-0000-0000-00000000d3e0")  # the seeded, published demo bot
+DEMO_FLOW_PATH = Path(__file__).resolve().parents[3] / "flows" / "hvylia-demo.json"
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture
+def settings(database_url: SecretStr) -> Settings:
+    return Settings(
+        env="test",
+        database_url=database_url,
+        ticket_secret=SecretStr(SECRET),
+        gateway_public_url="https://gateway.example/",
+        demo_bot_id=BOT_ID,
+        demo_flow_path=DEMO_FLOW_PATH,
+    )
 
 
 class AdminApi:
@@ -58,8 +69,8 @@ class AdminApi:
 
 
 @pytest.fixture
-def api() -> Iterator[AdminApi]:
-    api = AdminApi(SETTINGS)
+def api(settings: Settings) -> Iterator[AdminApi]:
+    api = AdminApi(settings)
     with api.http:
         yield api
 
@@ -137,11 +148,38 @@ async def test_needs_session_and_csrf(api: AdminApi) -> None:
     assert response.json()["error"]["code"] == "csrf_failed"
 
 
-async def test_without_ticket_secret_is_503() -> None:
-    api = AdminApi(SETTINGS.model_copy(update={"ticket_secret": None}))
+async def test_without_ticket_secret_is_503(settings: Settings) -> None:
+    api = AdminApi(settings.model_copy(update={"ticket_secret": None}))
     with api.http:
         csrf = await api.login_as("admin", user_id="u1")
         response = api.http.post("/calls/ticket", json={"bot_id": str(BOT_ID)}, headers=csrf)
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "tickets_unavailable"
+
+
+async def test_unknown_bot_is_404(api: AdminApi) -> None:
+    csrf = await api.login_as("admin", user_id="u1")
+
+    response = api.http.post("/calls/ticket", json={"bot_id": str(uuid4())}, headers=csrf)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "bot_not_found"
+
+
+async def test_unpublished_bot_only_for_debug(api: AdminApi, settings: Settings) -> None:
+    engine = create_engine(settings)
+    async with create_session_factory(engine)() as db, db.begin():
+        bot = Bot(name="draft only", provider="openai", model="gpt-4.1-mini")
+        db.add(bot)
+        await db.flush()
+        bot_id = str(bot.id)
+    await engine.dispose()
+    csrf = await api.login_as("admin", user_id="u1")
+
+    plain = api.http.post("/calls/ticket", json={"bot_id": bot_id}, headers=csrf)
+    debug = api.http.post("/calls/ticket", json={"bot_id": bot_id, "debug": True}, headers=csrf)
+
+    assert plain.status_code == 409
+    assert plain.json()["error"]["code"] == "bot_not_published"
+    assert debug.status_code == 200

@@ -53,11 +53,8 @@ LABEL org.opencontainers.image.source=https://github.com/trsergey/rozmova-voice-
 
 FROM runtime AS gateway
 COPY --from=build-gateway /app/.venv /app/.venv
-# Until published versions are served (ROZ-51), the gateway runs the demo flow from a file.
-COPY flows/hvylia-demo.json /app/flows/hvylia-demo.json
 ENV PORT=8001 \
-    ROZMOVA_SERVICE_NAME=gateway \
-    ROZMOVA_DEMO_FLOW_PATH=/app/flows/hvylia-demo.json
+    ROZMOVA_SERVICE_NAME=gateway
 USER app
 EXPOSE 8001
 CMD ["python", "-m", "gateway"]

@@ -112,6 +112,8 @@ services:
     # Graceful shutdown drains calls for up to 50 s before exiting.
     stop_grace_period: 60s
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 

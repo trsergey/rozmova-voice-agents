@@ -15,8 +15,9 @@ import uvicorn
 from fastapi import FastAPI
 
 from gateway.app import create_app
-from gateway.bots import DemoBotSettings, StaticBotLoader
+from gateway.bots import DemoKeySettings, Providers, PublishedBotLoader
 from gateway.calls import Calls
+from rozmova_core.db import create_engine
 from rozmova_core.log import configure_logging
 from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
@@ -68,9 +69,12 @@ def serve(app: FastAPI, calls: Calls, *, host: str, port: int) -> GatewayServer:
 def build() -> GatewayServer:
     settings = Settings()
     configure_logging(settings)
-    loader = StaticBotLoader.from_settings(DemoBotSettings())
+    redis = create_redis(settings)
+    loader = PublishedBotLoader(
+        redis, create_engine(settings), Providers.from_settings(DemoKeySettings())
+    )
     calls = Calls()
-    app = create_app(loader, create_redis(settings), settings, calls)
+    app = create_app(loader, redis, settings, calls)
     # A container service listens on all interfaces.
     return serve(app, calls, host="0.0.0.0", port=int(os.environ.get("PORT", "8001")))  # noqa: S104
 

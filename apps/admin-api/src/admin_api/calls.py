@@ -10,8 +10,10 @@ import structlog
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from admin_api.auth import CurrentSession
+from admin_api.bots import get_bot
 from admin_api.errors import ApiError
 from admin_api.sessions import AdminSession
 from rozmova_core import tickets
@@ -56,6 +58,13 @@ async def issue_ticket(body: TicketRequest, session: CurrentSession, request: Re
     if settings.ticket_secret is None:
         log.error("ticket_secret_unset")
         raise ApiError(503, "tickets_unavailable", "Calls are not configured on this server.")
+
+    factory: async_sessionmaker[AsyncSession] = request.app.state.db
+    async with factory() as db:
+        bot = await get_bot(db, body.bot_id)
+    # A debug call may run the draft (test console); a plain one needs a published version.
+    if bot.live_version_id is None and not body.debug:
+        raise ApiError(409, "bot_not_published", "This bot has no published version yet.")
 
     redis: Redis = request.app.state.redis
     call_id = body.call_id or uuid4()

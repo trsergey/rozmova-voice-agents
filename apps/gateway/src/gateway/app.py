@@ -8,10 +8,14 @@ the flow executor. Run it with ``python -m gateway`` (uvicorn with WebSocket pin
 Demo limits are per user from the ticket (``RateLimiter``); a user with all their calls
 open gets ``session_end{limit}`` at once.
 
-Not here yet: the knowledge base for ``kb_answer`` nodes (ROZ-43). A resumed call runs on
-the bot's current version; loading the version it started on comes with ROZ-51.
+A new call runs on the bot's live version; a resumed call keeps the version it started on
+(``bot_version`` in its saved state), even if a newer one was published meanwhile.
+``?draft=true`` runs the draft instead, for debug tickets only (the admin's test console).
+
+Not here yet: the knowledge base for ``kb_answer`` nodes (ROZ-43).
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID
@@ -20,7 +24,7 @@ import structlog
 from fastapi import FastAPI, Response, WebSocket
 from redis.asyncio import Redis
 
-from gateway.bots import BotLoader, BotRuntime
+from gateway.bots import BotLoader, BotRuntime, BotUnavailableError
 from gateway.calls import Calls
 from gateway.limits import RateLimiter
 from gateway.session import Session
@@ -46,6 +50,7 @@ log = structlog.get_logger(__name__)
 # Close codes in the 4xxx range are for applications.
 UNAUTHORIZED = 4401
 BOT_NOT_FOUND = 4404
+BOT_UNAVAILABLE = 4503  # the database or the provider is down; retry with a new ticket
 
 
 async def refuse(websocket: WebSocket, code: int) -> None:
@@ -88,11 +93,14 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        yield
-        await redis.aclose()
-        provider = getattr(loader, "provider", None)
-        if provider is not None and hasattr(provider, "aclose"):
-            await provider.aclose()
+        watch = asyncio.create_task(loader.watch(), name="bot-cache-watch")
+        try:
+            yield
+        finally:
+            watch.cancel()
+            await asyncio.wait([watch])
+            await loader.aclose()
+            await redis.aclose()
 
     async def admit(
         websocket: WebSocket, bot_id: UUID, call_id: UUID | None, token: str | None
@@ -152,6 +160,7 @@ def create_app(
         bot_id: UUID,
         call_id: UUID | None = None,
         ticket: str | None = None,
+        draft: bool = False,
     ) -> None:
         if calls.draining:
             # Before the upgrade, so the client knows to retry (the new instance answers).
@@ -161,8 +170,17 @@ def create_app(
         if grant is None:
             await refuse(websocket, UNAUTHORIZED)
             return
-        bot = await loader.load(bot_id)
+        if draft and not grant.debug:
+            log.warning("call_refused", reason="draft_without_debug", user_id=grant.user_id)
+            await refuse(websocket, UNAUTHORIZED)
+            return
+        try:
+            bot = await loader.load(bot_id, draft=draft)
+        except BotUnavailableError:
+            await refuse(websocket, BOT_UNAVAILABLE)
+            return
         if bot is None:
+            log.warning("call_refused", reason="bot_not_found", bot_id=str(bot_id))
             await refuse(websocket, BOT_NOT_FOUND)
             return
         store = SessionStore(redis, grant.call_id)
@@ -185,6 +203,22 @@ def create_app(
         store: SessionStore,
     ) -> None:
         state = await resume(store, bot_id)
+        if state is not None and state.bot_version != bot.bot_version:
+            # The call started on another version: keep it, the flow must not change mid-call.
+            try:
+                pinned = (
+                    await loader.load(bot_id, version=state.bot_version)
+                    if state.bot_version is not None
+                    else None
+                )
+            except BotUnavailableError:
+                await refuse(websocket, BOT_UNAVAILABLE)
+                return
+            if pinned is None:
+                log.warning("session_version_gone", stored_version=state.bot_version)
+                state = None
+            else:
+                bot = pinned
         resumed = state is not None
         if state is None:
             state = SessionState(call_id=grant.call_id, bot_id=bot_id, bot_version=bot.bot_version)

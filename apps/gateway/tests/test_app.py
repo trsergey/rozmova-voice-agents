@@ -24,7 +24,7 @@ from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from gateway.app import create_app
-from gateway.bots import BotLoader, BotRuntime, StaticBotLoader
+from gateway.bots import BotLoader, BotRuntime, BotUnavailableError, StaticBotLoader
 from gateway.calls import Calls
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import tickets
@@ -194,7 +194,13 @@ def test_refused_with_4401(gateway: Gateway, case: str) -> None:
 
 
 class NoBots:
-    async def load(self, bot_id: object) -> BotRuntime | None:
+    async def load(self, bot_id: object, **_: object) -> BotRuntime | None:
+        return None
+
+    async def watch(self) -> None:
+        return None
+
+    async def aclose(self) -> None:
         return None
 
 
@@ -272,6 +278,100 @@ def test_reconnect_resumes_the_call_on_real_redis(redis_url: str) -> None:
         StaticBotLoader(FLOW, provider, "gpt-4.1-mini"), redis=lambda: create_redis(settings)
     )
     reconnect_after_a_drop_mid_turn(gateway, provider)
+
+
+# --- bot versions (ROZ-51) ----------------------------------------------------------------
+
+
+def with_greeting(greeting: str) -> FlowGraph:
+    raw = FLOW.model_dump(mode="json")
+    [start] = [n for n in raw["nodes"] if n["type"] == "start"]
+    start["data"]["greeting"] = greeting
+    return FlowGraph.model_validate(raw)
+
+
+class VersionedBots:
+    """A bot whose live version the test switches; any version or the draft on request.
+    Each flow greets with its own name, so the greeting shows what the call runs."""
+
+    def __init__(self) -> None:
+        self.live = 1
+        self.unavailable = False
+        self.provider = FakeProvider([])
+        self.loads: list[tuple[int | None, bool]] = []  # (version, draft) per load
+
+    async def load(
+        self, bot_id: UUID, *, version: int | None = None, draft: bool = False
+    ) -> BotRuntime | None:
+        self.loads.append((version, draft))
+        if self.unavailable:
+            raise BotUnavailableError("database down")
+        if draft:
+            return BotRuntime(with_greeting("чернетка"), self.provider, "m", None)
+        number = version or self.live
+        return BotRuntime(with_greeting(f"версія {number}"), self.provider, "m", number)
+
+    async def watch(self) -> None:
+        return None
+
+    async def aclose(self) -> None:
+        return None
+
+
+def start_call(ws: Any) -> tuple[dict[str, Any], str]:
+    """``session_started`` and the greeting text."""
+    started = ws.receive_json()
+    greeting = "".join(e["text"] for e in until_turn_end(ws) if e["type"] == "assistant_delta")
+    return started, greeting
+
+
+def test_reconnect_keeps_the_version_the_call_started_on() -> None:
+    bots = VersionedBots()
+    gateway = Gateway(bots)
+    bot_id, call_id = uuid4(), uuid4()
+    with TestClient(gateway.app) as http:
+        with http.websocket_connect(url(bot_id, call_id, gateway.ticket(bot_id, call_id))) as ws:
+            first, greeting = start_call(ws)
+        assert (first["bot_version"], greeting) == (1, "версія 1")
+
+        bots.live = 2  # published while the call was away
+        bots.loads.clear()
+        with http.websocket_connect(url(bot_id, call_id, gateway.ticket(bot_id, call_id))) as ws:
+            resumed = ws.receive_json()
+        assert (resumed["resumed"], resumed["bot_version"]) == (True, 1)
+        # The live version (2) was loaded first, then the call's own version 1 for the run.
+        assert bots.loads == [(None, False), (1, False)]
+
+        other_call = uuid4()
+        path = url(bot_id, other_call, gateway.ticket(bot_id, other_call))
+        with http.websocket_connect(path) as ws:
+            new, greeting = start_call(ws)
+        assert (new["bot_version"], greeting) == (2, "версія 2")
+
+
+def test_draft_needs_a_debug_ticket() -> None:
+    gateway = Gateway(VersionedBots())
+    bot_id = uuid4()
+    with TestClient(gateway.app) as http:
+        call_id = uuid4()
+        plain = url(bot_id, call_id, gateway.ticket(bot_id, call_id)) + "&draft=true"
+        assert refused_code(http, plain) == 4401
+
+        call_id = uuid4()
+        debug = url(bot_id, call_id, gateway.ticket(bot_id, call_id, debug=True)) + "&draft=true"
+        with http.websocket_connect(debug) as ws:
+            started, greeting = start_call(ws)
+
+    assert (started["bot_version"], greeting) == (None, "чернетка")
+
+
+def test_bot_that_cannot_load_is_4503() -> None:
+    bots = VersionedBots()
+    bots.unavailable = True
+    gateway = Gateway(bots)
+    bot_id, call_id = uuid4(), uuid4()
+    with TestClient(gateway.app) as http:
+        assert refused_code(http, url(bot_id, call_id, gateway.ticket(bot_id, call_id))) == 4503
 
 
 # --- drain for a shutdown (FR-21) -------------------------------------------------------
