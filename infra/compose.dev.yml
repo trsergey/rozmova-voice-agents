@@ -102,6 +102,8 @@ services:
       ROZMOVA_DATABASE_URL: postgresql+asyncpg://rozmova:rozmova@postgres:5432/rozmova
       ROZMOVA_REDIS_URL: redis://redis:6379/0
       ROZMOVA_TICKET_SECRET: local-dev-ticket-secret
+      ROZMOVA_ADMIN_EMAIL: admin@rozmova.local
+      ROZMOVA_ADMIN_PASSWORD: local-dev-admin-password
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       # The LLM key from the host environment; the greeting works without a real one.
       ROZMOVA_DEMO_API_KEY: ${ROZMOVA_DEMO_API_KEY:-not-set}

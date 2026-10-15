@@ -43,6 +43,8 @@ migrates the database before the new version takes traffic.
 | `ROZMOVA_DATABASE_URL` | both | `postgresql+asyncpg://${{Postgres.PGUSER}}:${{Postgres.POSTGRES_PASSWORD}}@${{Postgres.RAILWAY_PRIVATE_DOMAIN}}:5432/${{Postgres.PGDATABASE}}` | asyncpg driver, private network. |
 | `ROZMOVA_REDIS_URL` | both | `${{Redis.REDIS_URL}}` | Tickets, session state, rate limits. |
 | `ROZMOVA_TICKET_SECRET` | both, same value | random 32 bytes hex | Signs the WebSocket tickets (admin-api issues, gateway verifies). Set from stdin so it never appears in a command line or a log: `openssl rand -hex 32 \| tee >(railway variable set ROZMOVA_TICKET_SECRET --stdin -s gateway) \| railway variable set ROZMOVA_TICKET_SECRET --stdin -s admin-api` |
+| `ROZMOVA_ADMIN_EMAIL` | admin-api | the admin's login email | admin-api creates this user with role `admin` on start (ROZ-26). |
+| `ROZMOVA_ADMIN_PASSWORD` | admin-api | a long random password, set from stdin | Changing it and redeploying resets the password: `openssl rand -base64 24 \| tee /dev/tty \| railway variable set ROZMOVA_ADMIN_PASSWORD --stdin -s admin-api` |
 | `ROZMOVA_ALLOWED_ORIGINS` | gateway | `["https://${{admin-api.RAILWAY_PUBLIC_DOMAIN}}"]` | Browser origins allowed to open the WebSocket. |
 | `ROZMOVA_DEMO_API_KEY` | gateway | OpenAI key, entered in the dashboard only | The demo bot's LLM key (`gpt-4.1-mini`). Until it is set, LLM turns end with `error{llm_unavailable}`; the greeting does not need it. |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | gateway | `60` | Time between SIGTERM and SIGKILL for the old deployment. The default is 0 s, which would cut every call on deploy. The gateway drains its calls in 50 s (`DRAIN_SECONDS` in `apps/gateway/src/gateway/__main__.py`) and exits 0 before the kill. |

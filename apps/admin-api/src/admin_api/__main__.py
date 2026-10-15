@@ -6,13 +6,16 @@ import uvicorn
 from fastapi import FastAPI
 
 from admin_api.app import create_app
+from rozmova_core.db import create_engine
 from rozmova_core.log import configure_logging
+from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
 
 
 def build() -> FastAPI:
-    configure_logging(Settings())
-    return create_app()
+    settings = Settings()
+    configure_logging(settings)
+    return create_app(settings, create_engine(settings), create_redis(settings))
 
 
 def main() -> None:

@@ -336,6 +336,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | `calls:live` | pub/sub | Admin API | Адмінка через WS | Живий лог дзвінків (FR-13) |
 | `ratelimit:{user_id}:{window}` | counter, TTL | Гейтвей | Гейтвей | Rate limit демо за користувачем із тікета |
 | `eval-job:{id}` | hash, TTL 1 год | Admin API | Admin API | Статус і прогрес прогону evals (FR-19) |
+| `admin-session:{sha256(id)}` | string (JSON), ковзний TTL 12 год | Admin API | Admin API | Сесія адмінки: користувач, роль, CSRF-токен; у cookie лише випадковий id; logout видаляє ключ (ADR 0014) |
 
 **Чому Stream, а не лише pub/sub.** Pub/sub не зберігає повідомлення: якщо Admin API перезапускається, події дзвінків губляться. Stream з consumer group дає at-least-once доставку й підтвердження `XACK`; запис у `call_events` ідемпотентний за id запису стріму. Повідомлення, що зависли в pending після падіння споживача, забираються через `XAUTOCLAIM` при старті. Pub/sub лишається там, де втрата не критична: сигнал про публікацію (гейтвей при старті все одно читає актуальну версію) і живий перегляд.
 
@@ -343,7 +344,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 
 | Метод і шлях | Призначення | FR |
 | --- | --- | --- |
-| `POST /auth/login`, `POST /auth/logout` | Вхід адміна, сесійна cookie (httpOnly) | FR-14 |
+| `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Вхід адміна, сесійна cookie (httpOnly); `login` і `me` повертають роль і CSRF-токен | FR-14 |
 | `POST /auth/access-code` | Вхід за кодом доступу → роль `viewer` | FR-14 |
 | `POST /calls/ticket` | Короткоживучий підписаний тікет для WebSocket гейтвея (`bot_id`, `call_id`, `debug`) | FR-14 |
 | `GET /bots`, `POST /bots` | Список і створення ботів | FR-12 |
@@ -471,6 +472,7 @@ GitLab Free дає 400 compute-хвилин на місяць, тому код �
 | 0011 | Движок діалогу — спільний пакет `packages/engine` для гейтвея, evals і CI | Движок усередині гейтвея, evals через WebSocket |
 | 0012 | Одна чернетка на місці, версія створюється публікацією, відкат копіює стару версію | Версія на кожне збереження; відкат переставляє вказівник |
 | 0013 | Двофазне підтвердження дій із побічним ефектом у коді движка | Довіра до промпту; окремий класифікатор згоди |
+| 0014 | Сесії адмінки: непрозорий id у httpOnly cookie, стан і CSRF-токен у Redis | JWT без стану сервера; double-submit CSRF cookie; сесії в PostgreSQL |
 
 **Перевірені факти (14.10.2026):**
 

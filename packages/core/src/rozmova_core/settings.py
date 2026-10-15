@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # admin-api) and the Vite dev server. A JSON list in the environment.
     allowed_origins: list[str] = ["http://localhost:8000", "http://localhost:5173"]
 
+    # The admin user admin-api creates or updates on start; both unset skips the seed.
+    admin_email: str | None = None
+    admin_password: SecretStr | None = None
+    # Admin web sessions expire after this long without a request.
+    admin_session_ttl_seconds: int = Field(default=12 * 3600, ge=60)
+
     # Per-user demo limits (SDD "Безпека та контроль витрат"), keyed by user_id from the ticket.
     limit_messages_per_minute: int = Field(default=20, ge=1)
     limit_sessions_per_user: int = Field(default=3, ge=1)

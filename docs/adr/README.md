@@ -18,3 +18,4 @@ the SDD ("Рішення для ADR і перевірені факти").
 | [0011](0011-engine-as-shared-package.md) | Dialogue engine as a shared package | Accepted |
 | [0012](0012-single-draft-immutable-versions.md) | One in-place draft, versions on publish, rollback copies | Accepted |
 | [0013](0013-two-phase-confirmation-in-engine.md) | Two-phase confirmation enforced in engine code | Accepted |
+| [0014](0014-admin-sessions-in-redis.md) | Admin sessions as an opaque cookie backed by Redis | Accepted |
