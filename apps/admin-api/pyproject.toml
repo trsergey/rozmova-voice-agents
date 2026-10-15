@@ -3,7 +3,13 @@ name = "rozmova-admin-api"
 version = "0.1.0"
 description = "Admin API: bots, drafts, versions, calls, auth, eval jobs."
 requires-python = ">=3.12,<3.13"
-dependencies = ["rozmova-contracts", "rozmova-core", "rozmova-engine"]
+dependencies = [
+    "fastapi>=0.120",
+    "rozmova-contracts",
+    "rozmova-core",
+    "rozmova-engine",
+    "uvicorn[standard]>=0.38",
+]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.14"]

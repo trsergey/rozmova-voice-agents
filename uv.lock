@@ -992,16 +992,20 @@ name = "rozmova-admin-api"
 version = "0.1.0"
 source = { editable = "apps/admin-api" }
 dependencies = [
+    { name = "fastapi" },
     { name = "rozmova-contracts" },
     { name = "rozmova-core" },
     { name = "rozmova-engine" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.120" },
     { name = "rozmova-contracts", editable = "packages/contracts" },
     { name = "rozmova-core", editable = "packages/core" },
     { name = "rozmova-engine", editable = "packages/engine" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.38" },
 ]
 
 [[package]]

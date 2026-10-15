@@ -84,7 +84,12 @@ def test_compose_has_required_services_with_healthchecks() -> None:
 
     assert set(services) >= {"postgres", "redis", "jaeger", "prometheus", "grafana"}
     for name, service in services.items():
-        assert "healthcheck" in service, f"{name} has no healthcheck"
+        if "build" in service:
+            # Our service images carry their HEALTHCHECK in the Dockerfile.
+            dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+            assert "\nHEALTHCHECK " in dockerfile, f"{name}: the Dockerfile has no HEALTHCHECK"
+        else:
+            assert "healthcheck" in service, f"{name} has no healthcheck"
 
 
 def test_compose_postgres_is_pgvector_pg16_with_data_volume() -> None:

@@ -1,6 +1,7 @@
 # Local development stack: data stores and observability.
 # Apps run on the host (`uv run ...`) and reach these services on localhost.
 # Usage: `make up` / `make down` (see Makefile). Ports bind to 127.0.0.1 only.
+# The `apps` profile also runs the service images (`make up-apps`), as Railway does.
 
 name: rozmova-dev
 
@@ -88,6 +89,44 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # --- The service images (Dockerfile at the repo root), profile `apps` ---------------------
+  gateway:
+    profiles: [apps]
+    build:
+      context: ..
+      target: gateway
+    image: rozmova-gateway:dev
+    environment: &app-env
+      ROZMOVA_ENV: local
+      ROZMOVA_DATABASE_URL: postgresql+asyncpg://rozmova:rozmova@postgres:5432/rozmova
+      ROZMOVA_REDIS_URL: redis://redis:6379/0
+      ROZMOVA_TICKET_SECRET: local-dev-ticket-secret
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      # The LLM key from the host environment; the greeting works without a real one.
+      ROZMOVA_DEMO_API_KEY: ${ROZMOVA_DEMO_API_KEY:-not-set}
+    ports:
+      - "127.0.0.1:8001:8001"
+    # Graceful shutdown drains calls for up to 50 s before exiting.
+    stop_grace_period: 60s
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  admin-api:
+    profiles: [apps]
+    build:
+      context: ..
+      target: admin-api
+    image: rozmova-admin-api:dev
+    environment: *app-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres-data:

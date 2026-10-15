@@ -4,7 +4,7 @@ MEMBERS := $(wildcard packages/*) apps/gateway apps/admin-api
 
 COMPOSE := docker compose -f infra/compose.dev.yml
 
-.PHONY: help install lint fmt typecheck test schemas migrate up down down-v ps logs
+.PHONY: help install lint fmt typecheck test schemas migrate up up-apps down down-v ps logs
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -48,11 +48,14 @@ migrate: ## Apply DB migrations to ROZMOVA_DATABASE_URL (make migrate rev=-1 to 
 up: ## Start the local stack (Postgres, Redis, Jaeger, Prometheus, Grafana) and wait until healthy
 	$(COMPOSE) up -d --wait
 
+up-apps: ## Build the service images and run them on top of the local stack
+	$(COMPOSE) --profile apps up -d --build --wait
+
 down: ## Stop the local stack, keep data volumes
-	$(COMPOSE) down
+	$(COMPOSE) --profile apps down
 
 down-v: ## Stop the local stack and delete its data volumes
-	$(COMPOSE) down -v
+	$(COMPOSE) --profile apps down -v
 
 ps: ## Show local stack status and health
 	$(COMPOSE) ps

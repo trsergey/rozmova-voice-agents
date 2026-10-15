@@ -1,0 +1,18 @@
+# Only what the Dockerfile copies matters; keep the build context small and secret-free.
+**/__pycache__
+**/*.py[cod]
+.venv
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.git
+.github
+.env
+.env.*
+node_modules
+docs
+evals
+infra
+kb
+**/tests
+!packages/contracts/tests/fixtures/demo_flow.json

@@ -28,3 +28,12 @@ make install   # sync the workspace and install pre-commit hooks
 make lint      # ruff + mypy
 make test      # pytest across the workspace
 ```
+
+Local stack and the service images (needs Docker):
+
+```sh
+make up        # PostgreSQL, Redis, Jaeger, Prometheus, Grafana
+make up-apps   # also build and run the gateway and admin-api images (as on Railway)
+docker compose -f infra/compose.dev.yml exec gateway python -m gateway.devticket
+               # prints a WebSocket URL with a fresh ticket for a test call
+```
