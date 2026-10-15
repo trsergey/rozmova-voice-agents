@@ -28,6 +28,9 @@ class Ticket(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: UUID = Field(default_factory=uuid4)
+    # Who calls, and the key of the per-user demo limits: ``user:<users.id>`` for a logged-in
+    # user, ``code:<access_codes.id>`` for a viewer with an access code (everyone with one
+    # code shares its limits).
     user_id: str
     bot_id: UUID
     call_id: UUID

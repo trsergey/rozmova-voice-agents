@@ -45,6 +45,7 @@ migrates the database before the new version takes traffic.
 | `ROZMOVA_TICKET_SECRET` | both, same value | random 32 bytes hex | Signs the WebSocket tickets (admin-api issues, gateway verifies). Set from stdin so it never appears in a command line or a log: `openssl rand -hex 32 \| tee >(railway variable set ROZMOVA_TICKET_SECRET --stdin -s gateway) \| railway variable set ROZMOVA_TICKET_SECRET --stdin -s admin-api` |
 | `ROZMOVA_ADMIN_EMAIL` | admin-api | the admin's login email | admin-api creates this user with role `admin` on start (ROZ-26). |
 | `ROZMOVA_ADMIN_PASSWORD` | admin-api | a long random password, set from stdin | Changing it and redeploying resets the password: `openssl rand -base64 24 \| tee /dev/tty \| railway variable set ROZMOVA_ADMIN_PASSWORD --stdin -s admin-api` |
+| `ROZMOVA_GATEWAY_PUBLIC_URL` | admin-api | `https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}` | `POST /calls/ticket` returns a ready `wss://` URL built from it. |
 | `ROZMOVA_ALLOWED_ORIGINS` | gateway | `["https://${{admin-api.RAILWAY_PUBLIC_DOMAIN}}"]` | Browser origins allowed to open the WebSocket. |
 | `ROZMOVA_DEMO_API_KEY` | gateway | OpenAI key, entered in the dashboard only | The demo bot's LLM key (`gpt-4.1-mini`). Until it is set, LLM turns end with `error{llm_unavailable}`; the greeting does not need it. |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | gateway | `60` | Time between SIGTERM and SIGKILL for the old deployment. The default is 0 s, which would cut every call on deploy. The gateway drains its calls in 50 s (`DRAIN_SECONDS` in `apps/gateway/src/gateway/__main__.py`) and exits 0 before the kill. |
@@ -72,6 +73,7 @@ GitHub environments `dev` / `demo` hold the per-environment settings:
 | `RAILWAY_TOKEN` | secret | A Railway **project token** for that environment (Project Settings → Tokens). |
 | `RAILWAY_ENVIRONMENT` | variable | `dev` / `demo` |
 | `GATEWAY_URL`, `ADMIN_URL` | variable | The public HTTPS domains of the two services. |
+| `SMOKE_ACCESS_CODE` | secret | An access code labelled `ci-smoke` issued on that environment; the smoke test's full call logs in with it. Unset → the full call is skipped with a warning. |
 
 Before the first `v*` tag: create the `demo` environment on Railway (duplicate `dev`, new
 secrets and domains), the GitHub environment `demo` with the values above, and move to the
@@ -87,24 +89,41 @@ uv run python infra/deploy.py --environment dev --sha <commit> \
 
 ## Smoke test
 
-`infra/deploy.py` checks from outside, through Railway's proxy: both `/healthz` return 200
-and a WebSocket to the gateway without a ticket is refused with `4401`. That proves TLS,
-the upgrade, routing and the app; a full call needs a ticket from the admin API and joins
-the smoke test with `POST /calls/ticket` (ROZ-61).
+`infra/deploy.py` checks from outside, through Railway's proxy:
+
+1. both `/healthz` return 200;
+2. a WebSocket to the gateway without a ticket is refused with `4401`;
+3. a full call: log in with `SMOKE_ACCESS_CODE` (`POST /auth/access-code`, a viewer),
+   get a ticket (`POST /calls/ticket`), open the returned `ws_url`, wait for the greeting,
+   send `hangup`, expect `session_end{hangup}`, log out.
+
+That proves TLS, the upgrade, routing, both apps, their shared ticket secret and Redis.
+The greeting needs no LLM key.
+
+Issue the smoke code once per environment (admin credentials from the variables above):
+
+```sh
+A=https://admin-api-dev-0e9c.up.railway.app; J=$(mktemp)
+CSRF=$(curl -s -c $J -X POST $A/auth/login -H 'content-type: application/json' \
+  -d '{"email":"<admin email>","password":"<admin password>"}' | jq -r .csrf_token)
+curl -s -b $J -X POST $A/access-codes -H 'content-type: application/json' \
+  -H "X-CSRF-Token: $CSRF" -d '{"label":"ci-smoke"}' | jq -r .code \
+  | gh secret set SMOKE_ACCESS_CODE --env dev
+rm $J
+```
 
 ### A full call by hand
 
-Until the admin API issues tickets (`POST /calls/ticket`, ROZ-61), a ticket comes from
-inside the gateway container, which can reach the private Redis:
+Log in (as above, or with an access code via `POST /auth/access-code`), then:
 
 ```sh
-# Once: an SSH key for Railway (railway ssh keys add --key ~/.ssh/railway_ed25519.pub).
-railway ssh -s gateway -e dev -- python -m gateway.devticket
-# prints ws://localhost:8001/ws/calls/<bot>?call_id=…&ticket=…
-# replace ws://localhost:8001 with wss://gateway-dev-9b22.up.railway.app and connect
+curl -s -b $J -X POST $A/calls/ticket -H 'content-type: application/json' \
+  -H "X-CSRF-Token: $CSRF" -d '{"bot_id":"00000000-0000-0000-0000-00000000d3e0"}' | jq -r .ws_url
+# connect to the printed wss:// URL within 60 s, e.g. websocat "<url>"
 ```
 
 Expected: `session_started`, the greeting as `assistant_delta`, `turn_end`; `hangup` gives
 `session_end{hangup}`; the same ticket a second time is refused with close code `4401`.
 Checked on 2026-10-15 with images `d3fac9e`: greeting after ~0.5 s from Kyiv, including
-the TLS handshake.
+the TLS handshake. `python -m gateway.devticket` inside the gateway container
+(`railway ssh -s gateway -e dev`) still prints a ticket without the admin API.

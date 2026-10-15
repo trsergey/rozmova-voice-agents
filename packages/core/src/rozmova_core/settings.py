@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     # Browser origins allowed to open the gateway WebSocket: the admin SPA (served by
     # admin-api) and the Vite dev server. A JSON list in the environment.
     allowed_origins: list[str] = ["http://localhost:8000", "http://localhost:5173"]
+    # The gateway's public base URL; admin-api builds the clients' WebSocket URLs from it.
+    gateway_public_url: str = "http://localhost:8001"
 
     # The admin user admin-api creates or updates on start; both unset skips the seed.
     admin_email: str | None = None

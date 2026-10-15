@@ -347,7 +347,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | --- | --- | --- |
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Вхід адміна, сесійна cookie (httpOnly); `login` і `me` повертають роль і CSRF-токен | FR-14 |
 | `POST /auth/access-code` | Вхід за кодом доступу → сесія з роллю `viewer`, прив'язана до коду; оновлює `last_used_at` | FR-14 |
-| `POST /calls/ticket` | Короткоживучий підписаний тікет для WebSocket гейтвея (`bot_id`, `call_id`, `debug`) | FR-14 |
+| `POST /calls/ticket` | Короткоживучий підписаний тікет для WebSocket гейтвея (`bot_id`, `call_id`, `debug`); повертає готовий `ws_url`. `user_id` у тікеті — `user:<id>` або `code:<id>`, тож усі з одним кодом ділять його ліміти; `debug` лише для `admin`; переданий `call_id` — перепідключення (FR-21) | FR-14 |
 | `GET /bots`, `POST /bots` | Список і створення ботів | FR-12 |
 | `GET /bots/{id}/draft`, `PUT /bots/{id}/draft` | Чернетка: читання й збереження на місці | FR-7 |
 | `GET /bots/{id}/versions`, `GET /bots/{id}/versions/{a}/diff/{b}` | Історія версій і дифф | FR-12 |

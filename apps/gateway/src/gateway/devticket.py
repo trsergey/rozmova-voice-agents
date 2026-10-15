@@ -2,7 +2,7 @@
 
 Signs and stores a ticket with the local settings (``ROZMOVA_TICKET_SECRET``, Redis) and
 prints the WebSocket URL to connect with, e.g. ``websocat "$(python -m gateway.devticket)"``.
-The admin API's ``POST /calls/ticket`` (ROZ-61) replaces it for real clients.
+Real clients get tickets from the admin API's ``POST /calls/ticket``.
 """
 
 import asyncio

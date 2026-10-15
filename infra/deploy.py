@@ -13,18 +13,23 @@ with `railway login` + `railway link` locally.
    environment commit. admin-api's pre-deploy command migrates the database first.
 3. Wait until both new deployments are SUCCESS. Railway keeps the old deployment serving
    until the new one passes its /healthz check, so a broken image never takes traffic.
-4. Smoke test from outside, through Railway's proxy: both /healthz return 200 and the
-   gateway WebSocket refuses a call without a ticket with 4401 (TLS, upgrade, routing and
-   the app itself are up). A full call needs a ticket from the admin API (ROZ-61).
+4. Smoke test from outside, through Railway's proxy: both /healthz return 200, the
+   gateway WebSocket refuses a call without a ticket with 4401, and a full call works: log
+   in with the access code in `SMOKE_ACCESS_CODE` (a viewer, the least privilege), get a
+   ticket from `POST /calls/ticket`, open the WebSocket, wait for the greeting, hang up.
+   Without `SMOKE_ACCESS_CODE` the full call is skipped with a warning.
 5. On any failure switch back to the previous images, wait for them, and exit 1.
 """
 
 import argparse
 import asyncio
+import http.cookiejar
 import json
+import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -37,6 +42,9 @@ TERMINAL = {"SUCCESS", "FAILED", "CRASHED", "REMOVED", "SKIPPED"}
 DEPLOY_TIMEOUT = 600.0
 START_TIMEOUT = 120.0
 POLL_SECONDS = 10.0
+# Any bot id gets the demo flow until bots live in the database (ROZ-33); then this becomes
+# the seeded demo bot's id.
+SMOKE_BOT_ID = "00000000-0000-0000-0000-00000000d3e0"
 
 
 class DeployError(Exception):
@@ -153,7 +161,7 @@ def healthz(base_url: str) -> None:
 
 
 async def websocket_refuses_without_ticket(gateway_url: str) -> None:
-    ws_url = gateway_url.replace("https://", "wss://", 1)
+    ws_url = gateway_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
     url = f"{ws_url}/ws/calls/00000000-0000-0000-0000-000000000000"
     try:
         async with asyncio.timeout(15), websockets.connect(url) as ws:
@@ -166,13 +174,68 @@ async def websocket_refuses_without_ticket(gateway_url: str) -> None:
     raise DeployError("WebSocket without a ticket was not refused")
 
 
+class AdminClient:
+    """Just enough of an admin API client for the smoke test: cookie session and CSRF."""
+
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url
+        self.csrf = ""
+        self._opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+        )
+
+    def post(self, path: str, body: Mapping[str, object]) -> dict[str, object]:
+        request = urllib.request.Request(  # noqa: S310 - our own https URL
+            f"{self.base_url}{path}",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", "X-CSRF-Token": self.csrf},
+            method="POST",
+        )
+        try:
+            with self._opener.open(request, timeout=10) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as exc:
+            raise DeployError(f"POST {path}: HTTP {exc.code} {exc.read()[:200]!r}") from exc
+        result: dict[str, object] = json.loads(raw) if raw else {}
+        return result
+
+
+async def full_call(admin_url: str, access_code: str) -> None:
+    admin = AdminClient(admin_url)
+    login = admin.post("/auth/access-code", {"code": access_code})
+    admin.csrf = str(login["csrf_token"])
+    try:
+        ticket = admin.post("/calls/ticket", {"bot_id": SMOKE_BOT_ID})
+        async with asyncio.timeout(20), websockets.connect(str(ticket["ws_url"])) as ws:
+            seen: list[str] = []
+            while "turn_end" not in seen:
+                event = json.loads(await ws.recv())
+                seen.append(event["type"])
+                if event["type"] in ("error", "session_end"):
+                    raise DeployError(f"call ended before the greeting: {event}")
+            if "assistant_delta" not in seen:
+                raise DeployError(f"no greeting, got {seen}")
+            await ws.send(json.dumps({"type": "hangup"}))
+            while (event := json.loads(await ws.recv()))["type"] != "session_end":
+                pass
+            if event.get("reason") != "hangup":
+                raise DeployError(f"expected session_end{{hangup}}, got {event}")
+    finally:
+        admin.post("/auth/logout", {})
+
+
 def smoke(gateway_url: str, admin_url: str) -> None:
+    access_code = os.environ.get("SMOKE_ACCESS_CODE", "")
+    if not access_code:
+        log("WARNING: SMOKE_ACCESS_CODE is not set; skipping the full call")
     for attempt in range(1, 7):
         try:
             healthz(gateway_url)
             healthz(admin_url)
             asyncio.run(websocket_refuses_without_ticket(gateway_url))
-        except (OSError, DeployError, TimeoutError) as exc:
+            if access_code:
+                asyncio.run(full_call(admin_url, access_code))
+        except (OSError, DeployError, TimeoutError, websockets.WebSocketException) as exc:
             # Right after SUCCESS the proxy can still route to the old instance or not yet
             # to the new one; a few retries cover the switch-over.
             if attempt == 6:
@@ -180,7 +243,8 @@ def smoke(gateway_url: str, admin_url: str) -> None:
             log(f"smoke attempt {attempt}: {exc}; retrying")
             time.sleep(POLL_SECONDS)
         else:
-            log("smoke test passed: /healthz 200, WebSocket without a ticket → 4401")
+            call = ", full call (greeting, hangup)" if access_code else ""
+            log(f"smoke test passed: /healthz 200, WebSocket without a ticket → 4401{call}")
             return
 
 

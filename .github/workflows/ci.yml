@@ -120,6 +120,8 @@ jobs:
         env:
           # A Railway project token scoped to this environment (GitHub environment secret).
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          # An access code (viewer) for the smoke test's full call; skipped when unset.
+          SMOKE_ACCESS_CODE: ${{ secrets.SMOKE_ACCESS_CODE }}
         run: >-
           uv run python infra/deploy.py
           --environment ${{ vars.RAILWAY_ENVIRONMENT }}
