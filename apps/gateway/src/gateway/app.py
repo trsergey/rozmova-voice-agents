@@ -5,6 +5,8 @@ state from Redis if it is there (FR-21), then wires one ``Session``: the bot fro
 ``BotLoader``, the mock subscriber tools over one process-wide billing, the tool loop and
 the flow executor. Run it with ``python -m gateway`` (uvicorn with WebSocket ping every
 15 s). While the process drains for a shutdown (``Calls``), new calls get HTTP 503.
+Demo limits are per user from the ticket (``RateLimiter``); a user with all their calls
+open gets ``session_end{limit}`` at once.
 
 Not here yet: the knowledge base for ``kb_answer`` nodes (ROZ-43). A resumed call runs on
 the bot's current version; loading the version it started on comes with ROZ-51.
@@ -18,8 +20,9 @@ import structlog
 from fastapi import FastAPI, Response, WebSocket
 from redis.asyncio import Redis
 
-from gateway.bots import BotLoader
+from gateway.bots import BotLoader, BotRuntime
 from gateway.calls import Calls
+from gateway.limits import RateLimiter
 from gateway.session import Session
 from gateway.state_store import SessionStore
 from rozmova_contracts import protocol
@@ -57,6 +60,18 @@ async def refuse(websocket: WebSocket, code: int) -> None:
     await websocket.close(code=code)
 
 
+def client_ip(websocket: WebSocket) -> str | None:
+    """For logs only, never for limits: the leftmost ``X-Forwarded-For`` value.
+
+    Railway's edge overwrites that header, so the leftmost value is the client; the
+    proxy ranges are not documented, so the address is not trusted for anything else.
+    """
+    forwarded = websocket.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return websocket.client.host if websocket.client else None
+
+
 def create_app(
     loader: BotLoader, redis: Redis, settings: Settings, calls: Calls | None = None
 ) -> FastAPI:
@@ -67,6 +82,7 @@ def create_app(
     secret = settings.ticket_secret.get_secret_value()
     allowed_origins = frozenset(settings.allowed_origins)
 
+    limiter = RateLimiter(redis, settings)
     billing = MockBilling(demo_subscribers())
     registry = ToolRegistry(subscriber_tools(billing))
 
@@ -150,6 +166,24 @@ def create_app(
             await refuse(websocket, BOT_NOT_FOUND)
             return
         store = SessionStore(redis, grant.call_id)
+        if not await limiter.open_call(grant.user_id, store.owner):
+            log.warning("call_refused", reason="too_many_calls", user_id=grant.user_id)
+            await websocket.accept()
+            await websocket.send_text(protocol.SessionEnd(reason="limit").model_dump_json())
+            await websocket.close()
+            return
+        try:
+            await run_call(websocket, bot_id, bot, grant, store)
+        finally:
+            await limiter.close_call(grant.user_id, store.owner)
+
+    async def run_call(
+        websocket: WebSocket,
+        bot_id: UUID,
+        bot: BotRuntime,
+        grant: tickets.Ticket,
+        store: SessionStore,
+    ) -> None:
         state = await resume(store, bot_id)
         resumed = state is not None
         if state is None:
@@ -168,7 +202,13 @@ def create_app(
         loop = ToolLoop(bot.provider, bot.model, registry, ctx, emit)
         executor = FlowExecutor(bot.flow, loop, registry, ctx, emit)
         session = Session(
-            websocket, executor, state, debug=grant.debug, store=store, resumed=resumed
+            websocket,
+            executor,
+            state,
+            debug=grant.debug,
+            store=store,
+            resumed=resumed,
+            limits=limiter.for_call(grant.user_id),
         )
 
         bound = log_context(
@@ -178,7 +218,9 @@ def create_app(
             user_id=grant.user_id,
         )
         with bound, calls.track(session):
-            log.info("session_opened", resumed=resumed, turn=state.turn)
+            log.info(
+                "session_opened", resumed=resumed, turn=state.turn, client_ip=client_ip(websocket)
+            )
             await session.run()
 
     return app

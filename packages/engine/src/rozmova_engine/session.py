@@ -8,6 +8,7 @@ caller: this module only converts to and from hash fields.
 
 import json
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Self
 from uuid import UUID
 
@@ -65,6 +66,10 @@ class SessionState(BaseModel):
     bot_id: UUID
     # The call keeps the version it started on, even if a newer one is published meanwhile.
     bot_version: int | None = Field(description="Published version number; null for a draft.")
+    started_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        description="When the call started; a resumed call keeps it (call duration limit).",
+    )
     turn: int = Field(default=0, ge=0, description="Number of the last started turn.")
     current_node: str | None = Field(default=None, description="Null until `start` has run.")
     slots: dict[str, JsonValue] = Field(default_factory=dict)

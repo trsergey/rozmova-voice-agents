@@ -3,6 +3,7 @@
 import asyncio
 import gc
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -11,6 +12,7 @@ import pytest
 from fakeredis import FakeAsyncRedis
 from starlette.websockets import WebSocketDisconnect
 
+from gateway.limits import CallLimits
 from gateway.outbox import Outbox
 from gateway.session import Session
 from gateway.state_store import SessionStore, session_key
@@ -98,6 +100,7 @@ class Call:
         turn_timeout: float = 30.0,
         redis: FakeAsyncRedis | None = None,
         resume: tuple[SessionStore, SessionState] | None = None,
+        limits: CallLimits | None = None,
     ) -> None:
         """``redis`` persists the state; ``resume`` is a claimed store and its state."""
         self.transport = FakeTransport()
@@ -122,6 +125,7 @@ class Call:
             turn_timeout=turn_timeout,
             store=store,
             resumed=self.resumed,
+            limits=limits,
         )
         self.task: asyncio.Task[None] | None = None
 
@@ -537,3 +541,86 @@ async def test_call_that_ends_during_the_drain_ends_as_usual() -> None:
 
     assert call.transport.sent[-1] == {"type": "session_end", "reason": "completed"}
     assert call.transport.closed_with == 1000
+
+
+# --- demo limits ------------------------------------------------------------------------
+
+
+def call_limits(
+    *, max_turns: int = 30, max_seconds: float = 600, messages: int = 1000
+) -> CallLimits:
+    left = [messages]
+
+    async def allow_message() -> bool:
+        left[0] -= 1
+        return left[0] >= 0
+
+    return CallLimits(max_turns=max_turns, max_seconds=max_seconds, allow_message=allow_message)
+
+
+async def test_message_over_the_rate_is_refused_and_the_call_goes_on() -> None:
+    async with Call(text_turn("Слухаю."), limits=call_limits(messages=1)) as call:
+        call.transport.send({"type": "user_text", "text": "раз"})
+        await call.transport.until("turn_end", 2)
+        call.transport.send({"type": "user_text", "text": "два"})
+        sent = await call.transport.until("error")
+
+        assert sent[-1] == {
+            "type": "error",
+            "code": "rate_limited",
+            "message": "Too many messages. Wait a minute and try again.",
+            "retryable": True,
+        }
+        assert len(call.provider.calls) == 1  # "два" never reached the model
+        assert call.transport.closed_with is None
+
+
+async def test_call_ends_after_the_last_allowed_turn() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    llm = [text_turn("Перша відповідь."), text_turn("Друга відповідь.")]
+    async with Call(*llm, redis=redis, limits=call_limits(max_turns=2)) as call:
+        call.transport.send({"type": "user_text", "text": "раз"})
+        await call.transport.until("turn_end", 2)
+        call.transport.send({"type": "user_text", "text": "два"})
+        await call.ended()
+
+    assert call.transport.types()[-2:] == ["turn_end", "session_end"]
+    assert call.transport.sent[-1] == {"type": "session_end", "reason": "limit"}
+    assert call.transport.closed_with == 1000
+    assert await saved(redis, call) is None  # the call is over, not resumable
+
+
+async def test_resumed_call_at_the_turn_limit_ends_at_once() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    first = Call(text_turn("Слухаю."), redis=redis)
+    async with first:
+        first.transport.send({"type": "user_text", "text": "алло"})
+        await first.transport.until("turn_end", 2)
+
+    store = SessionStore(redis, first.session.call_id)
+    state = await store.claim()
+    assert state is not None
+    second = Call(resume=(store, state), limits=call_limits(max_turns=1))
+    async with second:
+        await second.ended()
+
+    assert second.transport.types() == ["session_started", "session_end"]
+    assert second.transport.sent[-1]["reason"] == "limit"
+
+
+async def test_call_time_counts_from_the_start_and_lets_the_turn_finish() -> None:
+    reply: list[Step] = [TextDelta(text="Зараз "), Delay(0.4), TextDelta(text="подивлюсь.")]
+    call = Call(reply, limits=call_limits(max_seconds=60))
+    # Resumed calls keep started_at: all but 0.2 s of this call are already gone, so the
+    # time runs out in the middle of the reply.
+    call.session.state.started_at = datetime.now(UTC) - timedelta(seconds=59.8)
+    async with call:
+        call.transport.send({"type": "user_text", "text": "баланс"})
+        await call.transport.until("assistant_delta", 2)
+        await call.ended()
+
+    deltas = [e["text"] for e in call.transport.sent[3:] if e["type"] == "assistant_delta"]
+    assert "".join(deltas) == "Зараз подивлюсь."
+    assert call.transport.types()[-3:] == ["assistant_delta", "turn_end", "session_end"]
+    assert "turn_cancelled" not in call.transport.types()
+    assert call.transport.sent[-1]["reason"] == "limit"

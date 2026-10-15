@@ -22,14 +22,20 @@ When the session closes, the state is saved again before the socket is closed (a
 cut off by a disconnect is in it as ``interrupted``), or dropped if the call is over. A
 resumed session starts with ``session_started{resumed: true, history}`` and no greeting.
 
-``drain`` (graceful shutdown on deploy, FR-21) lets the running turn finish until a
-deadline, starts no new turns, then sends ``session_end{shutdown}`` and closes with 1012.
-The state stays in Redis, so the client reconnects to the new instance and goes on.
+A session can be asked to stop (``_request_stop``): it starts no new turns, lets the
+running one finish until a deadline, then sends ``session_end`` with the reason.
+
+- ``drain`` (graceful shutdown on deploy, FR-21): reason ``shutdown``, close 1012; the
+  state stays in Redis, so the client reconnects to the new instance and goes on.
+- Demo limits (``CallLimits``): after the last allowed turn or when the call's time is
+  up, reason ``limit``; the call is over. Over the per-minute message rate an utterance
+  is refused with ``error{rate_limited}`` and the call goes on.
 """
 
 import asyncio
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -38,6 +44,7 @@ from pydantic import ValidationError
 from redis.exceptions import RedisError
 from starlette.websockets import WebSocketDisconnect
 
+from gateway.limits import CallLimits
 from gateway.outbox import Outbox, OutboxStalledError
 from gateway.state_store import SessionStore
 from rozmova_contracts import protocol
@@ -96,21 +103,25 @@ class Session:
         turn_timeout: float = TURN_TIMEOUT,
         store: SessionStore | None = None,
         resumed: bool = False,
+        limits: CallLimits | None = None,
     ) -> None:
-        """``store`` is ``None`` when the state is not persisted (tests, evals)."""
+        """``store`` is ``None`` when the state is not persisted, ``limits`` when the call
+        is not limited (tests, evals)."""
         self._transport = transport
         self._executor = executor
         self.state = state
         self._store = store
         self._resumed = resumed
+        self._limits = limits
         self._debug = debug
         # Not `outbox or Outbox()`: an empty Outbox is falsy (it has __len__).
         self._outbox = outbox if outbox is not None else Outbox()
         self._inbox: asyncio.Queue[str] = asyncio.Queue(maxsize=INBOX_SIZE)
         self._turn_timeout = turn_timeout
         self._current_turn: asyncio.Task[None] | None = None
-        self._draining = asyncio.Event()
-        self._drain_deadline = 0.0
+        self._stop = asyncio.Event()
+        self._stop_reason: protocol.SessionEndReason = "shutdown"
+        self._stop_deadline = 0.0
 
     @property
     def call_id(self) -> UUID:
@@ -118,6 +129,7 @@ class Session:
 
     async def run(self) -> None:
         closing = SessionClosing(code=INTERNAL_ERROR)
+        time_is_up = self._schedule_time_limit()
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self._reader(), name="reader")
@@ -131,6 +143,9 @@ class Session:
             await self._send_quietly(
                 protocol.Error(code="internal", message="The session failed unexpectedly.")
             )
+        finally:
+            if time_is_up is not None:
+                time_is_up.cancel()
         await self._finish(closing)
 
     def drain(self, deadline: float) -> None:
@@ -138,8 +153,15 @@ class Session:
 
         ``deadline`` is on the event loop clock (``loop.time()``).
         """
-        self._drain_deadline = deadline
-        self._draining.set()
+        self._request_stop("shutdown", deadline)
+
+    def _request_stop(self, reason: protocol.SessionEndReason, deadline: float) -> None:
+        """Stop after the running turn; the first request wins."""
+        if self._stop.is_set():
+            return
+        self._stop_reason = reason
+        self._stop_deadline = deadline
+        self._stop.set()
 
     async def emit(self, event: protocol.ProtocolMessage) -> None:
         """Queue an event for the client; debug-only events only in debug sessions."""
@@ -166,6 +188,15 @@ class Session:
                 continue
             match message:
                 case protocol.UserText(text=text):
+                    if self._limits is not None and not await self._limits.allow_message():
+                        await self.emit(
+                            protocol.Error(
+                                code="rate_limited",
+                                message="Too many messages. Wait a minute and try again.",
+                                retryable=True,
+                            )
+                        )
+                        continue
                     await self._inbox.put(text)
                 case protocol.Hangup():
                     await self.emit(protocol.SessionEnd(reason="hangup"))
@@ -192,38 +223,38 @@ class Session:
         """Wait for an utterance; meanwhile surface the result of a turn that finishes.
 
         Waiting on both is what lets a finished turn close the session (``SessionClosing``)
-        and guarantees every turn's exception is retrieved. After a drain request no new
+        and guarantees every turn's exception is retrieved. After a stop request no new
         turn starts: utterances that arrive then are not answered.
         """
         while True:
-            if self._draining.is_set():
-                await self._end_for_shutdown()
+            if self._stop.is_set():
+                await self._end_after_turn()
             getter = asyncio.ensure_future(self._inbox.get())
-            drain = asyncio.ensure_future(self._draining.wait())
-            waiting: set[asyncio.Future[object]] = {getter, drain}  # type: ignore[arg-type]
+            stop = asyncio.ensure_future(self._stop.wait())
+            waiting: set[asyncio.Future[object]] = {getter, stop}  # type: ignore[arg-type]
             turn = self._current_turn
             if turn is not None:
                 waiting.add(turn)  # type: ignore[arg-type]
             try:
                 await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
             finally:
-                for waiter in (getter, drain):
+                for waiter in (getter, stop):
                     if not waiter.done():
                         waiter.cancel()
             if turn is not None and turn.done():
                 self._current_turn = None
                 _reraise(turn)
-            if drain.done():
-                # The drain wins over an utterance that arrived at the same moment: it
-                # would cancel the running turn. The client resends it after reconnecting.
+            if stop.done():
+                # The stop wins over an utterance that arrived at the same moment: it
+                # would cancel the running turn.
                 if getter.done() and not getter.cancelled():
-                    log.info("utterance_dropped_on_drain")
+                    log.info("utterance_dropped_on_stop")
                 continue
             if getter.done() and not getter.cancelled():
                 return getter.result()
 
-    async def _end_for_shutdown(self) -> None:
-        """Let the running turn finish until the drain deadline, then end the session.
+    async def _end_after_turn(self) -> None:
+        """Let the running turn finish until the stop deadline, then end the session.
 
         A turn still running at the deadline is cancelled like an interrupted one: the
         client gets ``turn_cancelled`` and the partial reply is saved as ``interrupted``.
@@ -231,11 +262,13 @@ class Session:
         """
         turn = self._current_turn
         if turn is not None:
-            remaining = self._drain_deadline - asyncio.get_running_loop().time()
+            remaining = self._stop_deadline - asyncio.get_running_loop().time()
             await asyncio.wait({turn}, timeout=max(remaining, 0))
             await self._cancel_current_turn()
-        await self.emit(protocol.SessionEnd(reason="shutdown"))
-        raise SessionClosing(code=SERVICE_RESTART)
+        await self.emit(protocol.SessionEnd(reason=self._stop_reason))
+        if self._stop_reason == "shutdown":
+            raise SessionClosing(code=SERVICE_RESTART)
+        raise SessionClosing(keep_state=False)
 
     async def _cancel_current_turn(self, *, notify: bool = True) -> None:
         """Cancel the running turn, wait until it has cleaned up, tell the client."""
@@ -281,6 +314,7 @@ class Session:
             )
             if self.state.current_node is not None:
                 await self.emit(protocol.NodeEnter(node_id=self.state.current_node))
+            self._check_turn_limit()
             return
         await self.emit(
             protocol.SessionStarted(call_id=self.call_id, bot_version=self.state.bot_version)
@@ -297,6 +331,7 @@ class Session:
         await self._save()
         if outcome is not None:
             await self._end_turn(outcome, timer)
+        self._check_turn_limit()
 
     async def _handle(self, text: str, timer: TurnTimer) -> TurnOutcome | None:
         """Run the turn; a failure becomes an ``error`` event and ``None``, the call goes on."""
@@ -338,6 +373,26 @@ class Session:
         if outcome.ended is not None:
             await self.emit(protocol.SessionEnd(reason=outcome.ended))
             raise SessionClosing(keep_state=False)
+
+    # --- limits --------------------------------------------------------------------
+
+    def _check_turn_limit(self) -> None:
+        """Stop after the last allowed subscriber turn (turn 1 is the greeting)."""
+        if self._limits is not None and self.state.turn - 1 >= self._limits.max_turns:
+            self._request_stop("limit", asyncio.get_running_loop().time())
+
+    def _schedule_time_limit(self) -> asyncio.TimerHandle | None:
+        """Stop when the call's time is up, counted from its start, across reconnects.
+
+        The running turn may still finish: it has ``turn_timeout`` past the limit.
+        """
+        if self._limits is None:
+            return None
+        elapsed = (datetime.now(UTC) - self.state.started_at).total_seconds()
+        left = max(self._limits.max_seconds - elapsed, 0.0)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + left + self._turn_timeout
+        return loop.call_later(left, self._request_stop, "limit", deadline)
 
     # --- state ---------------------------------------------------------------------
 

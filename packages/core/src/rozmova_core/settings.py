@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # admin-api) and the Vite dev server. A JSON list in the environment.
     allowed_origins: list[str] = ["http://localhost:8000", "http://localhost:5173"]
 
+    # Per-user demo limits (SDD "Безпека та контроль витрат"), keyed by user_id from the ticket.
+    limit_messages_per_minute: int = Field(default=20, ge=1)
+    limit_sessions_per_user: int = Field(default=3, ge=1)
+    limit_session_seconds: int = Field(default=600, ge=1)
+    limit_turns_per_session: int = Field(default=30, ge=1)
+
     # Standard OTel variable, read without the prefix so stock tooling keeps working.
     otel_exporter_otlp_endpoint: str | None = Field(
         default=None,

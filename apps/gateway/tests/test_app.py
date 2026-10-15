@@ -358,3 +358,26 @@ async def test_sigterm_drains_calls_and_exits_0(redis_url: str) -> None:
         if proc.poll() is None:
             proc.kill()
         await redis.aclose()
+
+
+# --- demo limits ------------------------------------------------------------------------
+
+
+def test_a_user_gets_at_most_3_open_calls(gateway: Gateway) -> None:
+    bot_id = uuid4()
+
+    def connect(http: TestClient) -> Any:
+        call_id = uuid4()
+        return http.websocket_connect(url(bot_id, call_id, gateway.ticket(bot_id, call_id)))
+
+    with TestClient(gateway.app) as http, contextlib.ExitStack() as open_calls:
+        for _ in range(3):
+            ws = open_calls.enter_context(connect(http))
+            assert ws.receive_json()["type"] == "session_started"
+
+        with connect(http) as fourth:
+            assert fourth.receive_json() == {"type": "session_end", "reason": "limit"}
+
+        open_calls.close()  # the three calls end and free their places
+        with connect(http) as fifth:
+            assert fifth.receive_json()["type"] == "session_started"
