@@ -353,8 +353,8 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | `GET /bots/{id}/versions`, `GET /bots/{id}/versions/{a}/diff/{b}` | Історія версій і дифф | FR-12 |
 | `POST /bots/{id}/validate` | Валідація збереженої чернетки: `{errors, warnings}` з `node_id`; доступна й `viewer`, бо нічого не змінює | FR-9 |
 | `POST /bots/{id}/evals` → `202 {job_id}`, `GET /evals/{job_id}` | Прогін еталонних діалогів по чернетці у фоні; результат зберігається в `bots.draft_eval_report` разом із хешем чернетки | FR-19 |
-| `POST /bots/{id}/publish` | Створює версію з чернетки, якщо валідація пройдена і є зелений eval-звіт для поточного хешу чернетки | FR-7, FR-8, FR-19 |
-| `POST /bots/{id}/rollback/{version}` | Нова версія з копією старої, публікація | FR-7 |
+| `POST /bots/{id}/publish` | Створює версію з чернетки, якщо валідація пройдена і є зелений eval-звіт для поточного хешу чернетки. Одна транзакція з блокуванням рядка бота (`SELECT … FOR UPDATE`), тож паралельні публікації отримують послідовні номери. Невалідна чернетка → 422 `draft_invalid` з помилками; та сама логіка, що вже в ефірі → 409. Після коміту — `bot:{id}:live` і `bot:published`; збій Redis не скасовує версію (fallback гейтвея — PostgreSQL) | FR-7, FR-8, FR-19 |
+| `POST /bots/{id}/rollback/{version}` | Нова версія з копією старої (`note: "rollback of vN"`), публікація; чернетку не змінює | FR-7 |
 | `GET /search/usages?tool=…` | Де використовується дія | FR-18 |
 | `PUT /bots/{id}/credentials` | Ключ провайдера (лише запис, у відповіді `last4`) | FR-17 |
 | `GET /calls`, `GET /calls/{id}` | Список і таймлайн дзвінків | FR-13 |

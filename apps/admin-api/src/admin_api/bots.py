@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from admin_api.auth import AdminOnly, current_session
 from admin_api.errors import ApiError
 from rozmova_contracts.flow import FlowGraph
-from rozmova_core.models import Bot
+from rozmova_core.models import Bot, BotVersion
 from rozmova_engine.flow import ValidationResult, validate_flow
 from rozmova_engine.providers import registry as providers
 from rozmova_engine.tools import MockBilling, ToolRegistry, subscriber_tools
@@ -53,6 +53,7 @@ class BotOut(BaseModel):
     provider: str
     model: str
     live_version_id: uuid.UUID | None
+    live_version: int | None = None  # the live version's number, e.g. 3 for "v3"
     draft_updated_at: datetime | None
     created_at: datetime
 
@@ -69,20 +70,27 @@ def _db(request: Request) -> async_sessionmaker[AsyncSession]:
     return factory
 
 
-async def _get_bot(db: AsyncSession, bot_id: uuid.UUID) -> Bot:
-    bot = await db.get(Bot, bot_id)
+async def get_bot(db: AsyncSession, bot_id: uuid.UUID, *, for_update: bool = False) -> Bot:
+    bot = await db.get(Bot, bot_id, with_for_update=for_update)
     if bot is None:
         raise ApiError(404, "bot_not_found", "No such bot.")
     return bot
 
 
-def _draft(bot: Bot) -> FlowGraph:
+def draft_flow(bot: Bot) -> FlowGraph:
     return FlowGraph.model_validate(bot.draft_flow or {})
 
 
 def _draft_out(bot: Bot) -> DraftOut:
-    flow = _draft(bot)
+    flow = draft_flow(bot)
     return DraftOut(flow=flow, updated_at=bot.draft_updated_at, hash=flow.logic_hash())
+
+
+async def _bot_out(db: AsyncSession, bot: Bot) -> BotOut:
+    live = await db.get(BotVersion, bot.live_version_id) if bot.live_version_id else None
+    return BotOut.model_validate(bot).model_copy(
+        update={"live_version": live.version if live else None}
+    )
 
 
 router = APIRouter(prefix="/bots", tags=["bots"], dependencies=[Depends(current_session)])
@@ -91,8 +99,15 @@ router = APIRouter(prefix="/bots", tags=["bots"], dependencies=[Depends(current_
 @router.get("")
 async def list_bots(request: Request) -> list[BotOut]:
     async with _db(request)() as db:
-        bots = await db.scalars(select(Bot).order_by(Bot.created_at))
-        return [BotOut.model_validate(bot) for bot in bots]
+        rows = await db.execute(
+            select(Bot, BotVersion.version)
+            .outerjoin(BotVersion, Bot.live_version_id == BotVersion.id)
+            .order_by(Bot.created_at)
+        )
+        return [
+            BotOut.model_validate(bot).model_copy(update={"live_version": live})
+            for bot, live in rows
+        ]
 
 
 @router.post("", status_code=201)
@@ -112,15 +127,15 @@ async def create_bot(body: BotIn, request: Request, admin: AdminOnly) -> BotOut:
 
 
 @router.get("/{bot_id}")
-async def get_bot(bot_id: uuid.UUID, request: Request) -> BotOut:
+async def read_bot(bot_id: uuid.UUID, request: Request) -> BotOut:
     async with _db(request)() as db:
-        return BotOut.model_validate(await _get_bot(db, bot_id))
+        return await _bot_out(db, await get_bot(db, bot_id))
 
 
 @router.get("/{bot_id}/draft")
 async def get_draft(bot_id: uuid.UUID, request: Request) -> DraftOut:
     async with _db(request)() as db:
-        return _draft_out(await _get_bot(db, bot_id))
+        return _draft_out(await get_bot(db, bot_id))
 
 
 @router.put("/{bot_id}/draft")
@@ -128,7 +143,7 @@ async def save_draft(
     bot_id: uuid.UUID, flow: FlowGraph, request: Request, admin: AdminOnly
 ) -> DraftOut:
     async with _db(request)() as db, db.begin():
-        bot = await _get_bot(db, bot_id)
+        bot = await get_bot(db, bot_id)
         bot.draft_flow = flow.model_dump(mode="json")
         bot.draft_updated_at = await db.scalar(select(func.now()))
     out = _draft_out(bot)
@@ -140,5 +155,5 @@ async def save_draft(
 async def validate_draft(bot_id: uuid.UUID, request: Request) -> ValidationResult:
     """Read-only, so viewers may run it too; it still needs the CSRF header (a POST)."""
     async with _db(request)() as db:
-        bot = await _get_bot(db, bot_id)
-    return validate_flow(_draft(bot), KNOWN_TOOLS)
+        bot = await get_bot(db, bot_id)
+    return validate_flow(draft_flow(bot), KNOWN_TOOLS)
