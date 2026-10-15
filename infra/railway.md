@@ -48,6 +48,7 @@ migrates the database before the new version takes traffic.
 | `ROZMOVA_GATEWAY_PUBLIC_URL` | admin-api | `https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}` | `POST /calls/ticket` returns a ready `wss://` URL built from it. |
 | `ROZMOVA_ALLOWED_ORIGINS` | gateway | `["https://${{admin-api.RAILWAY_PUBLIC_DOMAIN}}"]` | Browser origins allowed to open the WebSocket. |
 | `ROZMOVA_DEMO_API_KEY` | gateway | OpenAI key, entered in the dashboard only | The demo bot's LLM key (`gpt-4.1-mini`). Until it is set, LLM turns end with `error{llm_unavailable}`; the greeting does not need it. |
+| `OPENAI_API_KEY` | admin-api | `${{gateway.ROZMOVA_DEMO_API_KEY}}` | Embedding key for the knowledge-base ingest admin-api runs in the background on start (ROZ-27). Until it is set, the ingest is skipped with `kb_ingest_skipped` in the logs and the KB stays empty. |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | gateway | `60` | Time between SIGTERM and SIGKILL for the old deployment. The default is 0 s, which would cut every call on deploy. The gateway drains its calls in 50 s (`DRAIN_SECONDS` in `apps/gateway/src/gateway/__main__.py`) and exits 0 before the kill. |
 | `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS` | gateway | `30` | The new deployment takes traffic while the old one still runs, so clients reconnect to it right after `session_end{shutdown}`. |
 
