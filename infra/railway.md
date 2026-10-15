@@ -48,7 +48,49 @@ migrates the database before the new version takes traffic.
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | gateway | `60` | Time between SIGTERM and SIGKILL for the old deployment. The default is 0 s, which would cut every call on deploy. The gateway drains its calls in 50 s (`DRAIN_SECONDS` in `apps/gateway/src/gateway/__main__.py`) and exits 0 before the kill. |
 | `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS` | gateway | `30` | The new deployment takes traffic while the old one still runs, so clients reconnect to it right after `session_end{shutdown}`. |
 
+## Deploys
+
+CI deploys with `infra/deploy.py` (ROZ-44):
+
+- push to `main` → job `deploy-dev` → environment `dev`;
+- tag `v*` → job `release` → environment `demo` (to be created; see below);
+- a manual run (`gh workflow run ci.yml --ref <branch>`) deploys that ref to `dev`.
+
+The script switches `gateway` and `admin-api` to `ghcr.io/trsergey/rozmova-<service>:<sha>`
+with one environment patch (GraphQL `environmentPatchCommit`, so only that environment
+changes), waits until the new deployments are SUCCESS, runs the smoke test below, and on
+any failure switches the changed services back to the images they ran before. While a new
+deployment fails, Railway keeps the old one serving, so a broken release costs no
+downtime.
+
+GitHub environments `dev` / `demo` hold the per-environment settings:
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `RAILWAY_TOKEN` | secret | A Railway **project token** for that environment (Project Settings → Tokens). |
+| `RAILWAY_ENVIRONMENT` | variable | `dev` / `demo` |
+| `GATEWAY_URL`, `ADMIN_URL` | variable | The public HTTPS domains of the two services. |
+
+Before the first `v*` tag: create the `demo` environment on Railway (duplicate `dev`, new
+secrets and domains), the GitHub environment `demo` with the values above, and move to the
+Hobby plan.
+
+Run it locally (with `railway login` and the project linked):
+
+```sh
+uv run python infra/deploy.py --environment dev --sha <commit> \
+  --gateway-url https://gateway-dev-9b22.up.railway.app \
+  --admin-url https://admin-api-dev-0e9c.up.railway.app
+```
+
 ## Smoke test
+
+`infra/deploy.py` checks from outside, through Railway's proxy: both `/healthz` return 200
+and a WebSocket to the gateway without a ticket is refused with `4401`. That proves TLS,
+the upgrade, routing and the app; a full call needs a ticket from the admin API and joins
+the smoke test with `POST /calls/ticket` (ROZ-61).
+
+### A full call by hand
 
 Until the admin API issues tickets (`POST /calls/ticket`, ROZ-61), a ticket comes from
 inside the gateway container, which can reach the private Redis:
