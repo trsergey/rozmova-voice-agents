@@ -1,5 +1,6 @@
 """The demo bot admin-api seeds on start, against a migrated PostgreSQL."""
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from pydantic import SecretStr
 from sqlalchemy import delete, select
 
 from admin_api.app import create_app
+from admin_api.seed import REPUBLISHED_NOTE, seed_demo_bot
 from admin_api.sessions import CSRF_HEADER
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import live_bots
@@ -120,3 +122,104 @@ def test_broken_flow_file_fails_the_start(settings: Settings, tmp_path: Path) ->
         _start(settings.model_copy(update={"demo_flow_path": broken}), FakeServer()),
     ):
         pass
+
+
+# --- republishing a changed flow file (ROZ-82) -------------------------------------------
+
+
+def _changed_flow(tmp_path: Path, greeting: str = "Нове привітання з файлу") -> Path:
+    data = json.loads(DEMO_FLOW_PATH.read_text(encoding="utf-8"))
+    data["nodes"][0]["data"]["greeting"] = greeting
+    path = tmp_path / "hvylia-demo.json"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _greeting(http: TestClient, settings: Settings) -> str:
+    http.headers[CSRF_HEADER] = http.post("/auth/login", json=ADMIN).json()["csrf_token"]
+    draft = http.get(f"/bots/{settings.demo_bot_id}/draft").json()["flow"]
+    greeting: str = draft["nodes"][0]["data"]["greeting"]
+    return greeting
+
+
+@pytest.mark.integration
+async def test_changed_flow_file_is_published_as_a_new_version(
+    settings: Settings, tmp_path: Path
+) -> None:
+    server = FakeServer()
+    with _start(settings, server):
+        pass
+    changed = settings.model_copy(update={"demo_flow_path": _changed_flow(tmp_path)})
+
+    with _start(changed, server) as http:
+        greeting = _greeting(http, changed)
+    with _start(changed, server):  # a restart with the same file publishes nothing
+        pass
+
+    assert greeting == "Нове привітання з файлу"
+    assert await _versions(settings) == [(1, "seeded demo flow"), (2, REPUBLISHED_NOTE)]
+    redis = FakeAsyncRedis(server=server, decode_responses=True)
+    live = await live_bots.read(redis, settings.demo_bot_id)
+    assert live is not None
+    assert live.version == 2
+    assert live.flow["nodes"][0]["data"]["greeting"] == "Нове привітання з файлу"
+
+
+@pytest.mark.integration
+async def test_a_version_published_by_a_person_is_not_overwritten(
+    settings: Settings, tmp_path: Path
+) -> None:
+    server = FakeServer()
+    with _start(settings, server) as http:
+        http.headers[CSRF_HEADER] = http.post("/auth/login", json=ADMIN).json()["csrf_token"]
+        url = f"/bots/{settings.demo_bot_id}"
+        edited = http.get(f"{url}/draft").json()["flow"]
+        edited["nodes"][0]["data"]["greeting"] = "Привітання з адмінки"
+        http.put(f"{url}/draft", json=edited)
+        assert http.post(f"{url}/publish", json={"note": "admin edit"}).status_code == 201
+    changed = settings.model_copy(update={"demo_flow_path": _changed_flow(tmp_path)})
+
+    with _start(changed, server) as http:
+        greeting = _greeting(http, changed)
+
+    assert greeting == "Привітання з адмінки"
+    assert await _versions(settings) == [(1, "seeded demo flow"), (2, "admin edit")]
+
+
+@pytest.mark.integration
+async def test_unpublished_draft_edits_are_not_overwritten(
+    settings: Settings, tmp_path: Path
+) -> None:
+    server = FakeServer()
+    with _start(settings, server) as http:
+        http.headers[CSRF_HEADER] = http.post("/auth/login", json=ADMIN).json()["csrf_token"]
+        url = f"/bots/{settings.demo_bot_id}/draft"
+        edited = http.get(url).json()["flow"]
+        edited["nodes"][0]["data"]["greeting"] = "Чернетка з адмінки"
+        http.put(url, json=edited)
+    changed = settings.model_copy(update={"demo_flow_path": _changed_flow(tmp_path)})
+
+    with _start(changed, server) as http:
+        greeting = _greeting(http, changed)
+
+    assert greeting == "Чернетка з адмінки"
+    assert await _versions(settings) == [(1, "seeded demo flow")]
+
+
+@pytest.mark.integration
+async def test_replicas_starting_together_publish_one_version(
+    settings: Settings, tmp_path: Path
+) -> None:
+    server = FakeServer()
+    redis = FakeAsyncRedis(server=server, decode_responses=True)
+    engines = [create_engine(settings) for _ in range(2)]
+    factories = [create_session_factory(engine) for engine in engines]
+
+    # Both create the bot from scratch, then both republish a changed file.
+    await asyncio.gather(*(seed_demo_bot(settings, f, redis) for f in factories))
+    changed = settings.model_copy(update={"demo_flow_path": _changed_flow(tmp_path)})
+    await asyncio.gather(*(seed_demo_bot(changed, f, redis) for f in factories))
+    for engine in engines:
+        await engine.dispose()
+
+    assert await _versions(settings) == [(1, "seeded demo flow"), (2, REPUBLISHED_NOTE)]
