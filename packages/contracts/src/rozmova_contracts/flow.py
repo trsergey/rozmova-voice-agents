@@ -9,6 +9,7 @@ reachability, one edge per route, required texts, known tools) belong to flow va
 (FR-9), which reports errors with ``node_id`` for the editor to highlight.
 """
 
+import hashlib
 import json
 from typing import Annotated, Any, Literal
 
@@ -163,6 +164,12 @@ class FlowGraph(FlowModel):
     def same_logic(self, other: "FlowGraph") -> bool:
         """Equal apart from canvas positions and the order of nodes and edges."""
         return _canonical(self.logic_dump()) == _canonical(other.logic_dump())
+
+    def logic_hash(self) -> str:
+        """SHA-256 of the logic: equal hashes iff ``same_logic``. Identifies a draft for its
+        eval report, so moving a node on the canvas keeps the report valid."""
+        canonical = json.dumps(_canonical(self.logic_dump()), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _canonical(dump: dict[str, Any]) -> dict[str, list[str]]:

@@ -182,3 +182,20 @@ def test_same_logic_detects_rewired_route() -> None:
     ]
     changed = FlowGraph.model_validate({**raw, "edges": edges})
     assert not FlowGraph.model_validate(raw).same_logic(changed)
+
+
+def test_logic_hash_follows_same_logic() -> None:
+    raw = load_demo()
+    flow = FlowGraph.model_validate(raw)
+    moved = FlowGraph.model_validate(
+        {
+            "nodes": [{**n, "ui": {"x": i * 7, "y": 1}} for i, n in enumerate(raw["nodes"])][::-1],
+            "edges": raw["edges"][::-1],
+        }
+    )
+    rewired = FlowGraph.model_validate({**raw, "edges": raw["edges"][1:]})
+
+    assert len(flow.logic_hash()) == 64
+    assert flow.logic_hash() == moved.logic_hash()
+    assert flow.logic_hash() != rewired.logic_hash()
+    assert FlowGraph().logic_hash() != flow.logic_hash()
