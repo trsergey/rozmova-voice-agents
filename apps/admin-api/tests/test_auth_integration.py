@@ -24,6 +24,7 @@ async def settings(database_url: SecretStr) -> Settings:
     settings = Settings(
         env="test",
         database_url=database_url,
+        demo_seed=False,
         admin_email=f"  {EMAIL.upper()} ",  # normalized by the seed
         admin_password=SecretStr(PASSWORD),
     )

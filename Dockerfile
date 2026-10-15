@@ -54,10 +54,10 @@ LABEL org.opencontainers.image.source=https://github.com/trsergey/rozmova-voice-
 FROM runtime AS gateway
 COPY --from=build-gateway /app/.venv /app/.venv
 # Until published versions are served (ROZ-51), the gateway runs the demo flow from a file.
-COPY packages/contracts/tests/fixtures/demo_flow.json /app/flows/demo_flow.json
+COPY flows/hvylia-demo.json /app/flows/hvylia-demo.json
 ENV PORT=8001 \
     ROZMOVA_SERVICE_NAME=gateway \
-    ROZMOVA_DEMO_FLOW_PATH=/app/flows/demo_flow.json
+    ROZMOVA_DEMO_FLOW_PATH=/app/flows/hvylia-demo.json
 USER app
 EXPOSE 8001
 CMD ["python", "-m", "gateway"]
@@ -66,8 +66,11 @@ FROM runtime AS admin-api
 COPY --from=build-admin-api /app/.venv /app/.venv
 # Migrations: `alembic -c /app/alembic.ini upgrade head` (Railway pre-deploy command).
 COPY packages/core/alembic.ini /app/alembic.ini
+# The demo bot admin-api seeds on start (ROZ-54).
+COPY flows/hvylia-demo.json /app/flows/hvylia-demo.json
 ENV PORT=8000 \
-    ROZMOVA_SERVICE_NAME=admin-api
+    ROZMOVA_SERVICE_NAME=admin-api \
+    ROZMOVA_DEMO_FLOW_PATH=/app/flows/hvylia-demo.json
 USER app
 EXPOSE 8000
 CMD ["python", "-m", "admin_api"]

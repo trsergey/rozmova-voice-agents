@@ -42,8 +42,7 @@ TERMINAL = {"SUCCESS", "FAILED", "CRASHED", "REMOVED", "SKIPPED"}
 DEPLOY_TIMEOUT = 600.0
 START_TIMEOUT = 120.0
 POLL_SECONDS = 10.0
-# Any bot id gets the demo flow until bots live in the database (ROZ-33); then this becomes
-# the seeded demo bot's id.
+# The demo bot admin-api seeds on start (ROZMOVA_DEMO_BOT_ID, ROZ-54).
 SMOKE_BOT_ID = "00000000-0000-0000-0000-00000000d3e0"
 
 

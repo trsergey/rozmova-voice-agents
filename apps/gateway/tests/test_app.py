@@ -35,9 +35,7 @@ from rozmova_engine.providers.fake import Delay, FakeProvider, text_turn
 from rozmova_engine.session import INTERRUPTED_MARK
 
 FLOW = FlowGraph.model_validate_json(
-    (
-        Path(__file__).resolve().parents[3] / "packages/contracts/tests/fixtures/demo_flow.json"
-    ).read_text(encoding="utf-8")
+    (Path(__file__).resolve().parents[3] / "flows/hvylia-demo.json").read_text(encoding="utf-8")
 )
 SECRET = "test-secret"  # noqa: S105 - a test-only HMAC key
 SETTINGS = Settings(ticket_secret=SecretStr(SECRET), allowed_origins=["https://demo.example"])

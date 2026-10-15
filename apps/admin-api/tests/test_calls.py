@@ -20,6 +20,7 @@ SECRET = "test-ticket-secret"  # noqa: S105 - a test-only HMAC key
 SETTINGS = Settings(
     env="test",
     database_url=SecretStr("postgresql+asyncpg://u:p@nowhere:5432/none"),
+    demo_seed=False,
     ticket_secret=SecretStr(SECRET),
     gateway_public_url="https://gateway.example/",
 )

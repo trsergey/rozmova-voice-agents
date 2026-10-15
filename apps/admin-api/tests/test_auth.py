@@ -16,7 +16,9 @@ from rozmova_core.db import create_engine
 from rozmova_core.settings import Settings
 
 SETTINGS = Settings(
-    env="test", database_url=SecretStr("postgresql+asyncpg://u:p@nowhere:5432/none")
+    env="test",
+    database_url=SecretStr("postgresql+asyncpg://u:p@nowhere:5432/none"),
+    demo_seed=False,
 )
 
 # --- Passwords -----------------------------------------------------------------

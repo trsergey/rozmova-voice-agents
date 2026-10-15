@@ -27,9 +27,7 @@ from rozmova_core.models import Bot, BotVersion, User
 from rozmova_core.settings import Settings
 
 DEMO_FLOW: dict[str, Any] = json.loads(
-    (
-        Path(__file__).resolve().parents[3] / "packages/contracts/tests/fixtures/demo_flow.json"
-    ).read_text(encoding="utf-8")
+    (Path(__file__).resolve().parents[3] / "flows/hvylia-demo.json").read_text(encoding="utf-8")
 )
 ADMIN = {"email": "admin@example.com", "password": "admin-password"}
 VIEWER = {"email": "viewer@example.com", "password": "viewer-password"}
@@ -48,6 +46,7 @@ async def settings(database_url: SecretStr) -> Settings:
     settings = Settings(
         env="test",
         database_url=database_url,
+        demo_seed=False,
         admin_email=ADMIN["email"],
         admin_password=SecretStr(ADMIN["password"]),
     )

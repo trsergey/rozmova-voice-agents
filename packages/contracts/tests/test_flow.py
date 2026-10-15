@@ -19,7 +19,7 @@ from rozmova_contracts.flow import (
     ToolNode,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
+DEMO_FLOW = Path(__file__).resolve().parents[3] / "flows" / "hvylia-demo.json"
 SDD = Path(__file__).resolve().parents[3] / "docs" / "Rozmova_SDD.md"
 
 NODE_SAMPLES: list[tuple[dict[str, Any], type[FlowNode]]] = [
@@ -56,7 +56,7 @@ NODE_SAMPLES: list[tuple[dict[str, Any], type[FlowNode]]] = [
 
 
 def load_demo() -> dict[str, Any]:
-    data: dict[str, Any] = json.loads((FIXTURES / "demo_flow.json").read_text(encoding="utf-8"))
+    data: dict[str, Any] = json.loads(DEMO_FLOW.read_text(encoding="utf-8"))
     return data
 
 

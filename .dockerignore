@@ -15,4 +15,3 @@ evals
 infra
 kb
 **/tests
-!packages/contracts/tests/fixtures/demo_flow.json

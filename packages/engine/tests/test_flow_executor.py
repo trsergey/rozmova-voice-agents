@@ -34,9 +34,7 @@ from rozmova_engine.tools import (
 )
 
 DEMO_FLOW = FlowGraph.model_validate_json(
-    (Path(__file__).resolve().parents[2] / "contracts/tests/fixtures/demo_flow.json").read_text(
-        encoding="utf-8"
-    )
+    (Path(__file__).resolve().parents[3] / "flows/hvylia-demo.json").read_text(encoding="utf-8")
 )
 GREETING = "Вітаю! Я асистент Hvylia Mobile. Чим можу допомогти?"
 NOT_FOUND = "У базі знань немає відповіді на це питання. Хочете, переведу на оператора?"

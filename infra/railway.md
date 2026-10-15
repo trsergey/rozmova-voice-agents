@@ -119,6 +119,7 @@ Log in (as above, or with an access code via `POST /auth/access-code`), then:
 ```sh
 curl -s -b $J -X POST $A/calls/ticket -H 'content-type: application/json' \
   -H "X-CSRF-Token: $CSRF" -d '{"bot_id":"00000000-0000-0000-0000-00000000d3e0"}' | jq -r .ws_url
+# 00000000-…-d3e0 is the demo bot admin-api seeds on start (ROZMOVA_DEMO_BOT_ID)
 # connect to the printed wss:// URL within 60 s, e.g. websocat "<url>"
 ```
 

@@ -73,6 +73,7 @@ async def settings(database_url: SecretStr) -> Settings:
     settings = Settings(
         env="test",
         database_url=database_url,
+        demo_seed=False,
         admin_email=ADMIN["email"],
         admin_password=SecretStr(ADMIN["password"]),
     )

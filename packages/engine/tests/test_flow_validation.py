@@ -7,9 +7,7 @@ import pytest
 from rozmova_contracts.flow import FlowGraph
 from rozmova_engine.flow import FlowIssue, ValidationResult, validate_flow
 
-DEMO_FLOW = (
-    Path(__file__).resolve().parents[2] / "contracts" / "tests" / "fixtures" / "demo_flow.json"
-)
+DEMO_FLOW = Path(__file__).resolve().parents[3] / "flows" / "hvylia-demo.json"
 DEMO_TOOLS = {"get_balance", "get_current_tariff", "list_services", "activate_service"}
 
 

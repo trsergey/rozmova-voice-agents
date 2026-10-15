@@ -17,7 +17,7 @@ from rozmova_core.settings import Settings
 from rozmova_engine.providers import TextDelta
 from rozmova_engine.providers.fake import Delay, FakeProvider, Step
 
-FLOW_PATH = Path(__file__).resolve().parents[3] / "packages/contracts/tests/fixtures/demo_flow.json"
+FLOW_PATH = Path(__file__).resolve().parents[3] / "flows/hvylia-demo.json"
 SLOW_REPLY: list[Step] = [
     TextDelta(text="Зараз подивлюсь"),
     Delay(1.5),

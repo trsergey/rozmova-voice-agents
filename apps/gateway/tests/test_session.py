@@ -32,9 +32,7 @@ from rozmova_engine.tools import (
 )
 
 DEMO_FLOW = FlowGraph.model_validate_json(
-    (
-        Path(__file__).resolve().parents[3] / "packages/contracts/tests/fixtures/demo_flow.json"
-    ).read_text(encoding="utf-8")
+    (Path(__file__).resolve().parents[3] / "flows/hvylia-demo.json").read_text(encoding="utf-8")
 )
 DISCONNECT = object()
 WAIT = 2.0

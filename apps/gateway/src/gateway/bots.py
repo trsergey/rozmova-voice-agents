@@ -36,8 +36,7 @@ class DemoBotSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="ROZMOVA_DEMO_", extra="ignore")
 
-    # Until the demo flow is seeded (ROZ-54), the contracts fixture is the demo flow.
-    flow_path: Path = Path("packages/contracts/tests/fixtures/demo_flow.json")
+    flow_path: Path = Path("flows/hvylia-demo.json")
     provider: str = "openai"
     model: str = "gpt-4.1-mini"
     api_key: SecretStr | None = None

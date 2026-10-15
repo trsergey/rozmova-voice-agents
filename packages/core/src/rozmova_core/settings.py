@@ -1,7 +1,9 @@
 """Process settings read from the environment (prefix ``ROZMOVA_``)."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
+from uuid import UUID
 
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +56,12 @@ class Settings(BaseSettings):
     admin_password: SecretStr | None = None
     # Admin web sessions expire after this long without a request.
     admin_session_ttl_seconds: int = Field(default=12 * 3600, ge=60)
+
+    # The reference demo bot (ROZ-54): admin-api seeds it with this id and flow on start;
+    # the deploy smoke test and the public widget call it.
+    demo_seed: bool = True
+    demo_bot_id: UUID = UUID("00000000-0000-0000-0000-00000000d3e0")
+    demo_flow_path: Path = Path("flows/hvylia-demo.json")
 
     # Per-user demo limits (SDD "Безпека та контроль витрат"), keyed by user_id from the ticket.
     limit_messages_per_minute: int = Field(default=20, ge=1)

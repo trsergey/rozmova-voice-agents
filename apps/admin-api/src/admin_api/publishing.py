@@ -59,7 +59,7 @@ async def _live_flow(db: AsyncSession, bot: Bot) -> FlowGraph | None:
     return None if live is None else FlowGraph.model_validate(live.flow)
 
 
-async def _make_live(
+async def make_live(
     db: AsyncSession, bot: Bot, flow: FlowGraph, note: str | None, admin_id: str | None
 ) -> BotVersion:
     """Append version n+1 with ``flow`` and point the bot at it. The bot row must be locked."""
@@ -83,8 +83,8 @@ async def _make_live(
     return version
 
 
-async def _announce(request: Request, bot: Bot, version: BotVersion) -> None:
-    redis: Redis = request.app.state.redis
+async def announce_live(redis: Redis, bot: Bot, version: BotVersion) -> None:
+    """Put a committed live version into the cache and signal it; a Redis failure is logged."""
     live = live_bots.LiveBot(
         bot_id=bot.id,
         version_id=version.id,
@@ -118,8 +118,8 @@ async def publish(
                 {"errors": [issue.model_dump(mode="json") for issue in result.errors]},
             )
         # ROZ-73 adds the eval gate here: a green report for flow.logic_hash().
-        version = await _make_live(db, bot, flow, body.note or None, admin.user_id)
-    await _announce(request, bot, version)
+        version = await make_live(db, bot, flow, body.note or None, admin.user_id)
+    await announce_live(request.app.state.redis, bot, version)
     log.info("published", bot_id=str(bot_id), version=version.version, user_id=admin.user_id)
     return VersionOut.model_validate(version)
 
@@ -136,8 +136,8 @@ async def rollback(
         if target is None:
             raise ApiError(404, "version_not_found", f"Bot has no version {version}.")
         flow = FlowGraph.model_validate(target.flow)
-        created = await _make_live(db, bot, flow, f"rollback of v{version}", admin.user_id)
-    await _announce(request, bot, created)
+        created = await make_live(db, bot, flow, f"rollback of v{version}", admin.user_id)
+    await announce_live(request.app.state.redis, bot, created)
     log.info(
         "rolled_back",
         bot_id=str(bot_id),
