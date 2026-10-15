@@ -4,7 +4,7 @@ MEMBERS := $(wildcard packages/*) apps/gateway apps/admin-api
 
 COMPOSE := docker compose -f infra/compose.dev.yml
 
-.PHONY: help install lint fmt typecheck test schemas migrate up up-apps down down-v ps logs
+.PHONY: help install lint fmt typecheck test schemas migrate ingest up up-apps down down-v ps logs
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -44,6 +44,9 @@ ALEMBIC := uv run alembic -c packages/core/alembic.ini
 
 migrate: ## Apply DB migrations to ROZMOVA_DATABASE_URL (make migrate rev=-1 to step back)
 	$(if $(rev),$(ALEMBIC) downgrade $(rev),$(ALEMBIC) upgrade head)
+
+ingest: ## Ingest kb/ into pgvector (needs OPENAI_API_KEY; make ingest args=--fake for offline vectors)
+	uv run python -m rozmova_engine.rag.ingest $(args)
 
 up: ## Start the local stack (Postgres, Redis, Jaeger, Prometheus, Grafana) and wait until healthy
 	$(COMPOSE) up -d --wait

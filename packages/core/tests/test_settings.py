@@ -10,6 +10,7 @@ from rozmova_core.settings import Settings
 def _isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)  # no stray .env
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
 def test_reads_prefixed_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,3 +44,14 @@ def test_otel_endpoint_uses_standard_variable(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
 
     assert Settings().otel_exporter_otlp_endpoint == "http://jaeger:4318"
+
+
+def test_openai_key_uses_standard_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings().openai_api_key is None
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    key = Settings().openai_api_key
+    assert key is not None
+    assert key.get_secret_value() == "sk-test"
+    assert "sk-test" not in repr(Settings())

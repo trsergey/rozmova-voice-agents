@@ -9,6 +9,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from admin_api import access_codes, auth, bots, calls, errors, publishing
+from admin_api.kb import start_ingest, stop_ingest
 from admin_api.seed import seed_admin, seed_demo_bot
 from admin_api.sessions import SessionStore
 from rozmova_core.db import create_session_factory
@@ -21,11 +22,14 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        ingest = None
         try:
             await seed_admin(settings, factory)
             await seed_demo_bot(settings, factory, redis)
+            ingest = start_ingest(settings, engine)
             yield
         finally:
+            await stop_ingest(ingest)
             await redis.aclose()
             await engine.dispose()
 

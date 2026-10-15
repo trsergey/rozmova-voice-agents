@@ -17,7 +17,9 @@ faq.md                     balance, top-up, tariff change, porting, eSIM, suppor
 
 The ingester splits documents by headings into 300–800 token chunks, so every `##` section
 must stand on its own: repeat the tariff or service name in the heading and in the text, and
-do not refer to "above" or "below".
+do not refer to "above" or "below". The title line and the text before the first `##`
+(the tariff or service code) are repeated at the top of every chunk, so keep that preamble
+to a line or two. `make ingest` indexes the files (ROZ-27); admin-api re-ingests them on start.
 
 Each tariff and service file states its id on a line `Код тарифу: \`<id>\`` or
 `Код послуги: \`<id>\``. The LLM reads that id from retrieved chunks and passes it to

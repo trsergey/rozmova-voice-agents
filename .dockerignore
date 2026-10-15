@@ -13,5 +13,5 @@ node_modules
 docs
 evals
 infra
-kb
+kb/README.md
 **/tests

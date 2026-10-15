@@ -63,6 +63,17 @@ class Settings(BaseSettings):
     demo_bot_id: UUID = UUID("00000000-0000-0000-0000-00000000d3e0")
     demo_flow_path: Path = Path("flows/hvylia-demo.json")
 
+    # Knowledge base (ROZ-27): Markdown under kb_path is ingested into pgvector with this
+    # embedding model; admin-api re-ingests on start when kb_ingest_on_start is set.
+    kb_path: Path = Path("kb")
+    kb_ingest_on_start: bool = False
+    embedding_model: str = "text-embedding-3-small"
+    # The standard OpenAI variable, read without the prefix like the OTel endpoint below.
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY", "ROZMOVA_OPENAI_API_KEY"),
+    )
+
     # Per-user demo limits (SDD "Безпека та контроль витрат"), keyed by user_id from the ticket.
     limit_messages_per_minute: int = Field(default=20, ge=1)
     limit_sessions_per_user: int = Field(default=3, ge=1)

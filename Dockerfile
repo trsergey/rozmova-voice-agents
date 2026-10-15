@@ -38,6 +38,9 @@ COPY packages packages
 COPY apps/admin-api apps/admin-api
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable --package rozmova-admin-api
+# The cl100k_base tokenizer file the KB chunker needs, fetched at build time, not on start.
+ENV TIKTOKEN_CACHE_DIR=/app/tiktoken
+RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 # --- runtime: the venv only, a non-root user ----------------------------------------------
 FROM ${PYTHON_IMAGE} AS runtime
@@ -65,9 +68,15 @@ COPY --from=build-admin-api /app/.venv /app/.venv
 COPY packages/core/alembic.ini /app/alembic.ini
 # The demo bot admin-api seeds on start (ROZ-54).
 COPY flows/hvylia-demo.json /app/flows/hvylia-demo.json
+# The knowledge base admin-api ingests on start (ROZ-27) and its tokenizer file.
+COPY kb /app/kb
+COPY --from=build-admin-api /app/tiktoken /app/tiktoken
 ENV PORT=8000 \
     ROZMOVA_SERVICE_NAME=admin-api \
-    ROZMOVA_DEMO_FLOW_PATH=/app/flows/hvylia-demo.json
+    ROZMOVA_DEMO_FLOW_PATH=/app/flows/hvylia-demo.json \
+    ROZMOVA_KB_PATH=/app/kb \
+    ROZMOVA_KB_INGEST_ON_START=true \
+    TIKTOKEN_CACHE_DIR=/app/tiktoken
 USER app
 EXPOSE 8000
 CMD ["python", "-m", "admin_api"]
