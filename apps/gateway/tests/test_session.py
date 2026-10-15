@@ -8,10 +8,12 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from fakeredis import FakeAsyncRedis
 from starlette.websockets import WebSocketDisconnect
 
 from gateway.outbox import Outbox
 from gateway.session import Session
+from gateway.state_store import SessionStore, session_key
 from rozmova_contracts.flow import FlowGraph
 from rozmova_engine.flow import FlowExecutor
 from rozmova_engine.providers import ProviderError, TextDelta, ToolCall
@@ -94,12 +96,21 @@ class Call:
         debug: bool = False,
         outbox: Outbox | None = None,
         turn_timeout: float = 30.0,
+        redis: FakeAsyncRedis | None = None,
+        resume: tuple[SessionStore, SessionState] | None = None,
     ) -> None:
+        """``redis`` persists the state; ``resume`` is a claimed store and its state."""
         self.transport = FakeTransport()
         self.provider = provider = FakeProvider(llm_calls)
         registry = ToolRegistry(subscriber_tools(MockBilling(demo_subscribers())))
         ctx = ToolContext(subscriber_id=DEMO_SUBSCRIBER_ID)
-        state = SessionState(call_id=uuid4(), bot_id=uuid4(), bot_version=1)
+        self.resumed = resume is not None
+        store: SessionStore | None
+        if resume is not None:
+            store, state = resume
+        else:
+            state = SessionState(call_id=uuid4(), bot_id=uuid4(), bot_version=1)
+            store = SessionStore(redis, state.call_id) if redis is not None else None
         loop = ToolLoop(provider, "gpt-4.1-mini", registry, ctx, self.emit)
         executor = FlowExecutor(flow, loop, registry, ctx, self.emit)
         self.session = Session(
@@ -109,6 +120,8 @@ class Call:
             debug=debug,
             outbox=outbox,
             turn_timeout=turn_timeout,
+            store=store,
+            resumed=self.resumed,
         )
         self.task: asyncio.Task[None] | None = None
 
@@ -117,7 +130,8 @@ class Call:
 
     async def __aenter__(self) -> "Call":
         self.task = asyncio.create_task(self.session.run())
-        await self.transport.until("turn_end")  # the greeting turn
+        # A new call starts with the greeting turn, a resumed one with session_started.
+        await self.transport.until("session_started" if self.resumed else "turn_end")
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -347,3 +361,109 @@ async def test_no_task_exception_is_left_unretrieved() -> None:
     finally:
         loop.set_exception_handler(None)
     assert problems == []
+
+
+# --- state in Redis (FR-21) -------------------------------------------------------------
+
+
+async def saved(redis: FakeAsyncRedis, call: Call) -> SessionState | None:
+    return await SessionStore(redis, call.session.call_id).claim()
+
+
+async def test_state_is_saved_before_each_turn_end() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    llm: list[list[Step]] = [[ToolCall(id="c1", name="get_balance")], text_turn("120,50 грн.")]
+    call = Call(*llm, redis=redis)
+    seen_at_turn_end: list[int | None] = []
+    send_text = call.transport.send_text
+
+    async def record(data: str) -> None:
+        if json.loads(data)["type"] == "turn_end":
+            stored = await redis.hget(session_key(call.session.call_id), "turn")
+            seen_at_turn_end.append(None if stored is None else int(stored))
+        await send_text(data)
+
+    call.transport.send_text = record  # type: ignore[method-assign]
+    async with call:
+        call.transport.send({"type": "user_text", "text": "баланс"})
+        await call.transport.until("turn_end", 2)
+
+    assert seen_at_turn_end == [1, 2]
+    assert await redis.ttl(session_key(call.session.call_id)) > 0
+
+
+async def test_disconnect_mid_turn_saves_the_cut_off_reply() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    long_reply: list[Step] = [TextDelta(text="Тарифи у нас такі: "), Delay(10)]
+    call = Call(long_reply, redis=redis)
+    async with call:
+        call.transport.send({"type": "user_text", "text": "розкажи про тарифи"})
+        await call.transport.until("assistant_delta", 2)
+        call.transport.send(DISCONNECT)
+        await call.ended()
+
+    state = await saved(redis, call)
+    assert state is not None
+    assert state.turn == 2
+    assert [(m.role, m.text, m.interrupted) for m in state.transcript()][-2:] == [
+        ("user", "розкажи про тарифи", False),
+        ("assistant", "Тарифи у нас такі: ", True),
+    ]
+
+
+@pytest.mark.parametrize("frame", [{"type": "hangup"}, {"type": "user_text", "text": "бувай"}])
+async def test_finished_call_is_dropped(frame: dict[str, str]) -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    call = Call(route("bye"), redis=redis)
+    call_id = call.session.call_id
+    async with call:
+        assert await redis.exists(session_key(call_id)) == 1
+        call.transport.send(frame)
+        await call.ended()
+
+    assert await redis.exists(session_key(call_id)) == 0
+
+
+async def test_resumed_call_replays_history_and_goes_on() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    first = Call(text_turn("Слухаю."), redis=redis)
+    async with first:
+        first.transport.send({"type": "user_text", "text": "алло"})
+        await first.transport.until("turn_end", 2)
+
+    store = SessionStore(redis, first.session.call_id)
+    state = await store.claim()
+    assert state is not None
+    second = Call(text_turn("Так, я тут."), resume=(store, state), debug=True)
+    async with second:
+        started = second.transport.sent[0]
+        second.transport.send({"type": "user_text", "text": "ви тут?"})
+        sent = await second.transport.until("turn_end")
+
+    assert started["resumed"] is True
+    assert [(m["role"], m["text"]) for m in started["history"]] == [
+        ("assistant", "Вітаю! Я асистент Hvylia Mobile. Чим можу допомогти?"),
+        ("user", "алло"),
+        ("assistant", "Слухаю."),
+    ]
+    assert sent[1] == {"type": "node_enter", "node_id": state.current_node}
+    assert "Так, я тут." in "".join(e["text"] for e in sent if e["type"] == "assistant_delta")
+    assert sent[-1]["turn_id"] == 3
+    # The model saw the whole conversation, not just the new utterance.
+    assert [m.content for m in second.provider.calls[0].messages if m.role == "user"] == [
+        "алло",
+        "ви тут?",
+    ]
+
+
+async def test_superseded_session_closes_with_4409() -> None:
+    redis = FakeAsyncRedis(decode_responses=True)
+    old = Call(text_turn("Слухаю."), redis=redis)
+    async with old:
+        new = SessionStore(redis, old.session.call_id)
+        assert await new.claim() is not None  # resumed over another connection
+        old.transport.send({"type": "user_text", "text": "алло"})
+        await old.ended()
+
+    assert old.transport.closed_with == 4409
+    assert "turn_end" not in old.transport.types()[3:]

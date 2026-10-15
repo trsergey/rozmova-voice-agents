@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,15 +11,18 @@ import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from redis.asyncio import Redis
 from starlette.websockets import WebSocketDisconnect
 
 from gateway.app import create_app
 from gateway.bots import BotLoader, BotRuntime, StaticBotLoader
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import tickets
+from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
-from rozmova_engine.providers import ToolCall
-from rozmova_engine.providers.fake import FakeProvider, text_turn
+from rozmova_engine.providers import TextDelta, ToolCall
+from rozmova_engine.providers.fake import Delay, FakeProvider, text_turn
+from rozmova_engine.session import INTERRUPTED_MARK
 
 FLOW = FlowGraph.model_validate_json(
     (
@@ -30,14 +34,16 @@ SETTINGS = Settings(ticket_secret=SecretStr(SECRET), allowed_origins=["https://d
 
 
 class Gateway:
-    """A gateway app over an in-memory Redis, plus the admin API's half: issuing tickets."""
+    """A gateway app plus the admin API's half: issuing tickets.
 
-    def __init__(self, loader: BotLoader) -> None:
-        self.server = FakeServer()
+    ``redis`` makes a client per event loop (the app and the test run on different
+    loops); by default all of them share one in-memory server.
+    """
+
+    def __init__(self, loader: BotLoader, redis: Callable[[], Redis] | None = None) -> None:
+        server = FakeServer()
+        self.redis = redis or (lambda: FakeAsyncRedis(server=server, decode_responses=True))
         self.app = create_app(loader, self.redis(), SETTINGS)
-
-    def redis(self) -> FakeAsyncRedis:
-        return FakeAsyncRedis(server=self.server, decode_responses=True)
 
     def ticket(self, bot_id: UUID, call_id: UUID, *, debug: bool = False) -> str:
         async def issue() -> str:
@@ -189,3 +195,67 @@ def test_unknown_bot_is_refused() -> None:
 def test_gateway_needs_a_ticket_secret() -> None:
     with pytest.raises(RuntimeError, match="ROZMOVA_TICKET_SECRET"):
         create_app(NoBots(), FakeAsyncRedis(), Settings(ticket_secret=None))
+
+
+# --- reconnect (FR-21) ------------------------------------------------------------------
+
+
+def reconnect_after_a_drop_mid_turn(gateway: Gateway, provider: FakeProvider) -> None:
+    """Drop the socket while a reply streams, reconnect with a new ticket, go on."""
+    bot_id, call_id = uuid4(), uuid4()
+    with TestClient(gateway.app) as http:
+        path = url(bot_id, call_id, gateway.ticket(bot_id, call_id))
+        with http.websocket_connect(path) as ws:
+            assert ws.receive_json()["type"] == "session_started"
+            until_turn_end(ws)  # the greeting
+            ws.send_json({"type": "user_text", "text": "розкажи про тарифи"})
+            assert ws.receive_json()["text"] == "Тарифи у нас такі: "
+        # Leaving the block closes the socket in the middle of the turn.
+
+        path = url(bot_id, call_id, gateway.ticket(bot_id, call_id))
+        with http.websocket_connect(path) as ws:
+            started = ws.receive_json()
+            ws.send_json({"type": "user_text", "text": "а роумінг?"})
+            events = until_turn_end(ws)
+
+    assert started["type"] == "session_started"
+    assert started["resumed"] is True
+    assert started["call_id"] == str(call_id)
+    assert [(m["role"], m["text"], m["interrupted"]) for m in started["history"][1:]] == [
+        ("user", "розкажи про тарифи", False),
+        ("assistant", "Тарифи у нас такі: ", True),
+    ]
+    assert "Роумінг" in "".join(e["text"] for e in events if e["type"] == "assistant_delta")
+    assert events[-1]["turn_id"] == 3
+    seen = provider.calls[-1].messages
+    assert any(m.content.endswith(INTERRUPTED_MARK) for m in seen)
+
+
+def drop_and_reconnect_provider() -> FakeProvider:
+    return FakeProvider(
+        [[TextDelta(text="Тарифи у нас такі: "), Delay(10)], text_turn("Роумінг є в 40 країнах.")]
+    )
+
+
+def test_reconnect_resumes_the_call() -> None:
+    provider = drop_and_reconnect_provider()
+    gateway = Gateway(StaticBotLoader(FLOW, provider, "gpt-4.1-mini"))
+    reconnect_after_a_drop_mid_turn(gateway, provider)
+
+
+@pytest.fixture(scope="module")
+def redis_url() -> Iterator[str]:
+    from testcontainers.community.redis import RedisContainer
+
+    with RedisContainer("redis:7-alpine") as redis:
+        yield f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0"
+
+
+@pytest.mark.integration
+def test_reconnect_resumes_the_call_on_real_redis(redis_url: str) -> None:
+    provider = drop_and_reconnect_provider()
+    settings = Settings(redis_url=SecretStr(redis_url))
+    gateway = Gateway(
+        StaticBotLoader(FLOW, provider, "gpt-4.1-mini"), redis=lambda: create_redis(settings)
+    )
+    reconnect_after_a_drop_mid_turn(gateway, provider)

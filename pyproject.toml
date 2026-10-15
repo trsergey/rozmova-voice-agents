@@ -13,7 +13,7 @@ members = ["apps/gateway", "apps/admin-api", "packages/*"]
 
 [dependency-groups]
 dev = [
-    "fakeredis>=2.40.0",
+    "fakeredis[lua]>=2.40.0",
     "mypy>=1.13",
     "pre-commit>=4.0",
     "pytest>=8.3",

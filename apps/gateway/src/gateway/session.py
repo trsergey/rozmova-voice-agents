@@ -15,6 +15,12 @@ right code. An unexpected exception in a task closes the session with 1011 after
 A new utterance while a turn is running cancels that turn (FR-4): the client gets
 ``turn_cancelled``, the engine keeps the partial reply as ``interrupted`` and finishes a
 started side-effect tool under ``shield`` before the cancellation completes.
+
+The state goes to Redis (``SessionStore``, FR-21) after every turn, before its
+``turn_end``: a client that saw ``turn_end`` and then dropped finds that turn on resume.
+When the session closes, the state is saved again before the socket is closed (a turn
+cut off by a disconnect is in it as ``interrupted``), or dropped if the call is over. A
+resumed session starts with ``session_started{resumed: true, history}`` and no greeting.
 """
 
 import asyncio
@@ -25,9 +31,11 @@ from uuid import UUID
 
 import structlog
 from pydantic import ValidationError
+from redis.exceptions import RedisError
 from starlette.websockets import WebSocketDisconnect
 
 from gateway.outbox import Outbox, OutboxStalledError
+from gateway.state_store import SessionStore
 from rozmova_contracts import protocol
 from rozmova_engine.flow import FlowExecutor, TurnOutcome
 from rozmova_engine.providers import ProviderError
@@ -44,6 +52,7 @@ FLUSH_TIMEOUT = 2.0
 NORMAL = 1000
 INTERNAL_ERROR = 1011
 TRY_AGAIN_LATER = 1013
+SUPERSEDED = 4409  # the same call_id was resumed over another connection
 
 
 class Transport(Protocol):
@@ -61,10 +70,13 @@ class SessionClosing(Exception):  # noqa: N818 - a control-flow signal, not an e
     """End the session: ``flush`` sends what is queued first; ``code`` closes the socket.
 
     ``code`` is ``None`` when the client is already gone and there is nothing to close.
+    ``keep_state`` is ``False`` when the call is over (hangup, end of flow, handoff): its
+    state is dropped and the call cannot be resumed.
     """
 
     code: int | None = NORMAL
     flush: bool = True
+    keep_state: bool = True
 
 
 class Session:
@@ -77,10 +89,15 @@ class Session:
         debug: bool = False,
         outbox: Outbox | None = None,
         turn_timeout: float = TURN_TIMEOUT,
+        store: SessionStore | None = None,
+        resumed: bool = False,
     ) -> None:
+        """``store`` is ``None`` when the state is not persisted (tests, evals)."""
         self._transport = transport
         self._executor = executor
         self.state = state
+        self._store = store
+        self._resumed = resumed
         self._debug = debug
         # Not `outbox or Outbox()`: an empty Outbox is falsy (it has __len__).
         self._outbox = outbox if outbox is not None else Outbox()
@@ -137,7 +154,7 @@ class Session:
                     await self._inbox.put(text)
                 case protocol.Hangup():
                     await self.emit(protocol.SessionEnd(reason="hangup"))
-                    raise SessionClosing()
+                    raise SessionClosing(keep_state=False)
                 case protocol.AudioChunk():
                     await self.emit(
                         protocol.Error(
@@ -212,16 +229,36 @@ class Session:
     # --- turns ---------------------------------------------------------------------
 
     async def _start_call(self) -> None:
+        if self._resumed:
+            await self.emit(
+                protocol.SessionStarted(
+                    call_id=self.call_id,
+                    bot_version=self.state.bot_version,
+                    resumed=True,
+                    history=self.state.transcript(),
+                )
+            )
+            if self.state.current_node is not None:
+                await self.emit(protocol.NodeEnter(node_id=self.state.current_node))
+            return
         await self.emit(
             protocol.SessionStarted(call_id=self.call_id, bot_version=self.state.bot_version)
         )
         timer = TurnTimer()
         outcome = await self._executor.start(self.state, timer)
+        await self._save()
         await self._end_turn(outcome, timer)
 
     async def _run_turn(self, text: str) -> None:
-        """One subscriber turn; failures become ``error`` events, the session goes on."""
+        """One subscriber turn, saved before its ``turn_end``."""
         timer = TurnTimer()
+        outcome = await self._handle(text, timer)
+        await self._save()
+        if outcome is not None:
+            await self._end_turn(outcome, timer)
+
+    async def _handle(self, text: str, timer: TurnTimer) -> TurnOutcome | None:
+        """Run the turn; a failure becomes an ``error`` event and ``None``, the call goes on."""
         try:
             async with asyncio.timeout(self._turn_timeout):
                 outcome = await self._executor.handle(self.state, text, timer)
@@ -234,7 +271,7 @@ class Session:
                     code="turn_timeout", message="The turn took too long.", retryable=True
                 )
             )
-            return
+            return None
         except ProviderError as err:
             log.warning("llm_unavailable", error=str(err), retryable=err.retryable)
             await self.emit(
@@ -244,12 +281,12 @@ class Session:
                     retryable=err.retryable,
                 )
             )
-            return
+            return None
         except Exception:
             log.exception("turn_failed", turn_id=self.state.turn)
             await self.emit(protocol.Error(code="internal", message="The turn failed."))
-            return
-        await self._end_turn(outcome, timer)
+            return None
+        return outcome
 
     async def _end_turn(self, outcome: TurnOutcome, timer: TurnTimer) -> None:
         await self.emit(
@@ -259,11 +296,40 @@ class Session:
         )
         if outcome.ended is not None:
             await self.emit(protocol.SessionEnd(reason=outcome.ended))
-            raise SessionClosing()
+            raise SessionClosing(keep_state=False)
+
+    # --- state ---------------------------------------------------------------------
+
+    async def _save(self) -> None:
+        """Persist the state; a Redis failure costs only resumability, not the call."""
+        if self._store is None:
+            return
+        try:
+            saved = await self._store.save(self.state)
+        except RedisError as err:
+            log.warning("session_save_failed", error=str(err))
+            return
+        if not saved:
+            log.info("session_superseded")
+            raise SessionClosing(code=SUPERSEDED)
+
+    async def _persist_on_close(self, closing: SessionClosing) -> None:
+        """Save or drop the state before the socket closes, so a fast reconnect sees it."""
+        if self._store is None:
+            return
+        try:
+            async with asyncio.timeout(FLUSH_TIMEOUT):
+                if closing.keep_state:
+                    await self._store.save(self.state)
+                else:
+                    await self._store.drop()
+        except (RedisError, TimeoutError) as err:
+            log.warning("session_save_failed", error=str(err))
 
     # --- closing -------------------------------------------------------------------
 
     async def _finish(self, closing: SessionClosing) -> None:
+        await self._persist_on_close(closing)
         if closing.flush:
             for event in self._outbox.take_all():
                 await self._send_quietly(event)

@@ -41,7 +41,9 @@ To **resume** a dropped call, request a new ticket for the same `call_id` and co
 while the session state is alive (30 minutes after the last turn). The server answers with
 `session_started` where `resumed` is `true` and `history` holds the conversation so far; the
 client re-renders it. A turn that was running when the connection dropped is cancelled and
-its partial reply appears in `history` with `interrupted: true`.
+its partial reply appears in `history` with `interrupted: true`. The state is saved before each
+`turn_end`, so every turn the client saw ended is in `history`. A call that ended (`hangup`,
+`completed`, `handoff`) cannot be resumed: the same `call_id` starts a new conversation.
 
 ## Framing rules
 
@@ -294,6 +296,7 @@ handshake with HTTP 403, and a browser would see only code `1006`.
 | --- | --- |
 | `4401` | The ticket is missing, invalid, expired, already used, does not match `bot_id`/`call_id`, or the `Origin` is not allowed. Get a new ticket. Sent before any message. |
 | `4404` | The ticket is valid but there is no such bot. Sent before any message. |
+| `4409` | The same `call_id` was resumed over another connection; this one is stale. Do not reconnect from here. |
 | `1013` | Backpressure: the client did not read and the server's outbound queue stayed full for more than 10 s. |
 
 During graceful shutdown the gateway refuses new connections on `/ws` with HTTP `503`

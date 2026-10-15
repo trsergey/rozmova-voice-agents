@@ -1,12 +1,13 @@
 """FastAPI app of the dialogue gateway: ``WS /ws/calls/{bot_id}`` and a health check.
 
-The endpoint admits a connection only with a valid ticket (``admit``), then wires one
-``Session``: the bot from the ``BotLoader``, the mock subscriber tools over one process-wide
-billing, the tool loop and the flow executor. Run it with ``python -m gateway`` (uvicorn
-with WebSocket ping every 15 s).
+The endpoint admits a connection only with a valid ticket (``admit``), resumes the call's
+state from Redis if it is there (FR-21), then wires one ``Session``: the bot from the
+``BotLoader``, the mock subscriber tools over one process-wide billing, the tool loop and
+the flow executor. Run it with ``python -m gateway`` (uvicorn with WebSocket ping every
+15 s).
 
-Not here yet: session state in Redis and resume (ROZ-59), the knowledge base for
-``kb_answer`` nodes (ROZ-43).
+Not here yet: the knowledge base for ``kb_answer`` nodes (ROZ-43). A resumed call runs on
+the bot's current version; loading the version it started on comes with ROZ-51.
 """
 
 from collections.abc import AsyncIterator
@@ -19,12 +20,13 @@ from redis.asyncio import Redis
 
 from gateway.bots import BotLoader
 from gateway.session import Session
+from gateway.state_store import SessionStore
 from rozmova_contracts import protocol
 from rozmova_core import tickets
 from rozmova_core.log import log_context
 from rozmova_core.settings import Settings
 from rozmova_engine.flow import FlowExecutor
-from rozmova_engine.session import SessionState
+from rozmova_engine.session import SessionState, SessionStateError
 from rozmova_engine.tool_loop import ToolLoop
 from rozmova_engine.tools import (
     DEMO_SUBSCRIBER_ID,
@@ -101,6 +103,23 @@ def create_app(loader: BotLoader, redis: Redis, settings: Settings) -> FastAPI:
             return None
         return ticket
 
+    async def resume(store: SessionStore, bot_id: UUID) -> SessionState | None:
+        """The call's saved state, now owned by this connection; ``None`` for a new call.
+
+        State that cannot be used (another format version after a deploy, or another bot)
+        is replaced by a new call rather than refused: the subscriber loses the history,
+        not the call.
+        """
+        try:
+            state = await store.claim()
+        except SessionStateError as exc:
+            log.warning("session_state_unreadable", error=str(exc))
+            return None
+        if state is not None and state.bot_id != bot_id:
+            log.warning("session_state_other_bot", stored_bot_id=str(state.bot_id))
+            return None
+        return state
+
     app = FastAPI(title="Rozmova gateway", lifespan=lifespan)
 
     @app.get("/healthz")
@@ -122,9 +141,13 @@ def create_app(loader: BotLoader, redis: Redis, settings: Settings) -> FastAPI:
         if bot is None:
             await refuse(websocket, BOT_NOT_FOUND)
             return
+        store = SessionStore(redis, grant.call_id)
+        state = await resume(store, bot_id)
+        resumed = state is not None
+        if state is None:
+            state = SessionState(call_id=grant.call_id, bot_id=bot_id, bot_version=bot.bot_version)
         await websocket.accept()
 
-        state = SessionState(call_id=grant.call_id, bot_id=bot_id, bot_version=bot.bot_version)
         # Every caller is the demo subscriber; the ticket identifies the viewer, not a
         # subscriber.
         ctx = ToolContext(subscriber_id=DEMO_SUBSCRIBER_ID)
@@ -136,7 +159,9 @@ def create_app(loader: BotLoader, redis: Redis, settings: Settings) -> FastAPI:
 
         loop = ToolLoop(bot.provider, bot.model, registry, ctx, emit)
         executor = FlowExecutor(bot.flow, loop, registry, ctx, emit)
-        session = Session(websocket, executor, state, debug=grant.debug)
+        session = Session(
+            websocket, executor, state, debug=grant.debug, store=store, resumed=resumed
+        )
 
         bound = log_context(
             call_id=str(state.call_id),
@@ -145,6 +170,7 @@ def create_app(loader: BotLoader, redis: Redis, settings: Settings) -> FastAPI:
             user_id=grant.user_id,
         )
         with bound:
+            log.info("session_opened", resumed=resumed, turn=state.turn)
             await session.run()
 
     return app
