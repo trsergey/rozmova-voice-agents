@@ -1,0 +1,145 @@
+# Evals with the real model (ROZ-71, ADR 0007): the eval runner on a fresh PostgreSQL with
+# the knowledge base ingested, the report as an artifact and in the job summary.
+#
+# - Called by CI: the fast subset on PRs that touch the bot's behaviour (informational:
+#   the result is a PR comment, not a failed check), the full set on release tags
+#   (blocking: `release` needs it).
+# - Nightly: the full set, only when main moved since the last nightly run, so quiet days
+#   cost nothing; a red gate fails the run. A manual run picks the subset.
+#
+# Cost (gpt-4.1-mini bot and judge): about $0.04 for the fast subset and $0.13 for the full
+# set. The key is the OPENAI_API_KEY repository secret; give it its own OpenAI project with
+# a monthly budget, which is the hard spend cap. Without the secret (e.g. PRs from forks)
+# the job is skipped with a notice.
+name: Evals
+
+on:
+  workflow_call:
+    inputs:
+      subset:
+        description: "fast (2 cases per tag) or full"
+        type: string
+        default: fast
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      subset:
+        description: "fast (2 cases per tag) or full"
+        type: choice
+        options: [full, fast]
+        default: full
+
+permissions:
+  contents: read
+
+concurrency:
+  # Nightly and manual runs share one slot; calls from CI run in CI's concurrency group.
+  group: evals-${{ github.event_name == 'schedule' && 'nightly' || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    name: eval (${{ inputs.subset || 'full' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read          # the nightly check for new commits
+      pull-requests: write   # the PR summary comment
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.1-pg16
+        env:
+          POSTGRES_USER: rozmova
+          POSTGRES_PASSWORD: rozmova
+          POSTGRES_DB: rozmova
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rozmova" --health-interval 2s --health-timeout 2s
+          --health-retries 20
+    env:
+      SUBSET: ${{ inputs.subset || 'full' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ROZMOVA_DATABASE_URL: postgresql+asyncpg://rozmova:rozmova@localhost:5432/rozmova
+      ROZMOVA_LOG_LEVEL: WARNING
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Decide whether to run
+        id: gate
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::notice::OPENAI_API_KEY is not available here (fork PR or unset secret); evals skipped."
+            echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow eval.yml --event schedule \
+              --status completed --limit 1 --json headSha --jq '.[0].headSha // ""')
+            if [ "$last" = "$GITHUB_SHA" ]; then
+              echo "::notice::main has not changed since the last nightly run ($last); evals skipped."
+              echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+      - if: steps.gate.outputs.run == 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install with the evals extra
+        if: steps.gate.outputs.run == 'true'
+        run: uv sync --all-packages --extra evals --locked
+      - name: Migrate and ingest the knowledge base
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          make migrate
+          make ingest
+      - name: Run evals
+        id: eval
+        if: steps.gate.outputs.run == 'true'
+        # Informational on PRs: a red gate shows in the summary and the comment, not as a
+        # failed check. Blocking everywhere else: the release tag (release needs this job),
+        # nightly and manual runs (a red run is how a regression gets noticed).
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if [ "$SUBSET" = "fast" ]; then make eval-fast; else make eval; fi
+      - name: Report
+        if: always() && steps.gate.outputs.run == 'true'
+        run: |
+          # Names are eval_report-<UTC time>.md, so the last in sort order is the newest.
+          report=$(find evals/reports -name '*.md' 2>/dev/null | sort | tail -1)
+          if [ -z "$report" ]; then
+            echo "No eval report was written." >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          echo "REPORT=$report" >> "$GITHUB_ENV"
+      - name: Upload the report
+        if: always() && env.REPORT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ env.SUBSET }}-${{ github.run_id }}
+          path: evals/reports/
+          retention-days: 30
+      - name: Comment on the PR
+        if: always() && env.REPORT != '' && github.event_name == 'pull_request'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          marker="<!-- rozmova-eval-report -->"
+          {
+            echo "$marker"
+            # Up to the low judge scores: those are in the artifact and the job summary.
+            sed '/^## Low judge scores/,$d' "$REPORT"
+            echo
+            echo "Fast subset, informational. Full report: [run]($RUN_URL) (artifact \`eval-report-…\`)."
+          } > comment.md
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | tail -1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" \
+              -F body=@comment.md > /dev/null
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file comment.md
+          fi

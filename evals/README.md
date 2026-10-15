@@ -80,6 +80,23 @@ It writes `evals/reports/eval_report-<time>.json` (the `eval_report` the admin A
 `.md`, prints the Markdown and exits 1 when a threshold is not met. A full run with
 `gpt-4.1-mini` takes about 100 s and costs about $0.10 for the judge.
 
+## In CI
+
+`.github/workflows/eval.yml` runs the same runner on a fresh PostgreSQL with `kb/` ingested:
+
+| When | Set | Effect |
+| --- | --- | --- |
+| PR that changes `flows/`, `evals/`, `kb/`, `packages/engine/` or the flow contract | fast | informational: the summary is a PR comment (updated on every push), the check stays green |
+| tag `v*` | full | blocking: the release to Railway `demo` waits for it |
+| nightly, 03:00 UTC | full | only when `main` moved since the last nightly run; a red gate fails the run |
+| manual (`gh workflow run eval.yml -f subset=fast`) | chosen | blocking |
+
+The report is the job summary and the `eval-report-…` artifact (30 days). The key is the
+`OPENAI_API_KEY` repository secret; give it its own OpenAI project with a monthly budget,
+which is the hard spend cap. A fast run costs about $0.04, a full one about $0.13
+(gpt-4.1-mini bot and judge). Without the secret, e.g. on PRs from forks, the job is skipped
+with a notice.
+
 ## Pass rules (for the runner)
 
 - A case passes on its deterministic checks: `expected_tools` called (arguments match

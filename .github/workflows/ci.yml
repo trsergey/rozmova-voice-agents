@@ -4,6 +4,8 @@
 # images, wait, smoke test, roll back on failure). A manual run deploys its ref to dev.
 # Integration tests start PostgreSQL (pgvector) and Redis with testcontainers, the same
 # code path as locally; GitHub's Ubuntu runners have Docker.
+# Evals with the real model (eval.yml): the fast subset on PRs that touch the bot's
+# behaviour (informational), the full set before a release (blocking).
 name: CI
 
 on:
@@ -97,6 +99,57 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
+  changes:
+    name: changes (does the PR touch the bot's behaviour?)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      evals: ${{ steps.diff.outputs.evals }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.base_ref }}
+        # Flows and prompts, eval cases and thresholds, the knowledge base, the engine
+        # (LLM layer, tools, RAG, runner) and the flow contract.
+        run: |
+          changed=$(git diff --name-only "origin/$BASE...HEAD")
+          echo "$changed"
+          if echo "$changed" | grep -qE \
+              '^(flows/|evals/|kb/|packages/engine/|packages/contracts/src/rozmova_contracts/flow\.py$)'; then
+            echo "evals=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "evals=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  eval-pr:
+    name: evals (fast, informational)
+    needs: [changes]
+    if: needs.changes.outputs.evals == 'true'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    uses: ./.github/workflows/eval.yml
+    with:
+      subset: fast
+    secrets: inherit
+
+  eval-release:
+    name: evals (full, blocks the release)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    uses: ./.github/workflows/eval.yml
+    with:
+      subset: full
+    secrets: inherit
+
   deploy-dev:
     name: deploy to Railway dev
     needs: [images]
@@ -131,7 +184,7 @@ jobs:
 
   release:
     name: release to Railway demo
-    needs: [images]
+    needs: [images, eval-release]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
