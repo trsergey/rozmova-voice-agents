@@ -23,3 +23,7 @@ node_modules/
 .DS_Store
 .idea/
 .vscode/
+
+# Eval runs
+.deepeval/
+evals/reports/

@@ -32,8 +32,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: Install (uv.lock must be up to date)
-        run: uv sync --all-packages --locked
+      - name: Install (uv.lock must be up to date; extras so mypy sees deepeval)
+        run: uv sync --all-packages --all-extras --locked
       - run: make lint
 
   test:

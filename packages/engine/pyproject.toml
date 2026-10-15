@@ -8,10 +8,16 @@ dependencies = [
     "httpx2>=2.13,<3",
     "openai>=3.31,<4",
     "pydantic>=2.9",
+    "pyyaml>=6.0.3",
     "rozmova-contracts",
     "rozmova-core",
     "structlog>=26.1.0",
     "tiktoken>=0.9",
+]
+
+[project.optional-dependencies]
+evals = [
+    "deepeval>=4.3.0",
 ]
 
 [build-system]

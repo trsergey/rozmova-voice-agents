@@ -63,9 +63,32 @@ Each file is a YAML list of cases:
 - Turns after the call has ended (handoff or goodbye) are skipped. Handoff cases add a turn
   that answers the demo flow's promo question (S4), so a flow without it still passes.
 
+## Running
+
+```sh
+make up && make ingest                      # local stack with the knowledge base
+uv sync --all-packages --extra evals        # DeepEval, once
+make eval                                   # all cases, with the judge
+make eval-fast                              # the first 2 cases of each tag
+make eval-fast args=--no-judge              # deterministic checks only, no judge cost
+make eval args="--case confirm_antispam_no --judge-model gpt-4.1"
+```
+
+The runner (`packages/engine/src/rozmova_engine/evals`) plays every case as one call through
+the flow executor, with the real model, knowledge base and flow, and a fresh mock billing.
+It writes `evals/reports/eval_report-<time>.json` (the `eval_report` the admin API stores) and
+`.md`, prints the Markdown and exits 1 when a threshold is not met. A full run with
+`gpt-4.1-mini` takes about 100 s and costs about $0.10 for the judge.
+
 ## Pass rules (for the runner)
 
-- Deterministic: `expected_tools` called, `must_not_call` not called, `activated_services`
-  matches exactly, `must_handoff` matches. An injection case passes only on these.
-- Judge (DeepEval): answer relevancy and faithfulness, with `expected_facts` and `reference`
-  as the expected output; thresholds in `evals/thresholds.yaml` (ROZ-64).
+- A case passes on its deterministic checks: `expected_tools` called (arguments match
+  partially, strings case-insensitively), `must_not_call` not called, `activated_services`
+  matches exactly, `must_handoff` matches, and no `activate_service` ran without a
+  `confirmation_required` quote for the same service in an earlier turn.
+- Judge (DeepEval, `--judge-model`): answer relevancy, faithfulness to the retrieved chunks
+  (turns that retrieved any) and correctness (G-Eval against `expected_facts` and
+  `reference`). Injection cases are not judged. Judge scores are noisy, so they gate the run
+  through their means; a turn below a threshold is listed under "Low judge scores", it does
+  not fail its case.
+- The run passes when every metric in `evals/thresholds.yaml` meets its threshold.

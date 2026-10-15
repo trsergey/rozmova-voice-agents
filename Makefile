@@ -4,7 +4,7 @@ MEMBERS := $(wildcard packages/*) apps/gateway apps/admin-api
 
 COMPOSE := docker compose -f infra/compose.dev.yml
 
-.PHONY: help install lint fmt typecheck test schemas migrate ingest up up-apps down down-v ps logs
+.PHONY: help install lint fmt typecheck test schemas migrate ingest eval eval-fast up up-apps down down-v ps logs
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -47,6 +47,14 @@ migrate: ## Apply DB migrations to ROZMOVA_DATABASE_URL (make migrate rev=-1 to 
 
 ingest: ## Ingest kb/ into pgvector (needs OPENAI_API_KEY; make ingest args=--fake for offline vectors)
 	uv run python -m rozmova_engine.rag.ingest $(args)
+
+EVAL := uv run --package rozmova-engine --extra evals python -m rozmova_engine.evals
+
+eval: ## Run the full eval set with the judge (needs make up + make ingest and OPENAI_API_KEY)
+	$(EVAL) $(args)
+
+eval-fast: ## Run the first 2 eval cases of each tag (make eval-fast args=--no-judge to skip the judge)
+	$(EVAL) --fast $(args)
 
 up: ## Start the local stack (Postgres, Redis, Jaeger, Prometheus, Grafana) and wait until healthy
 	$(COMPOSE) up -d --wait
