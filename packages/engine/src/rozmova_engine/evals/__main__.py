@@ -113,7 +113,7 @@ async def main(argv: Sequence[str]) -> int:
             thresholds,
             started_at=started,
             finished_at=datetime.now(UTC),
-            flow=str(args.flow),
+            flow=_shown(args.flow),
             provider=args.provider,
             model=args.model,
             judge_model=judge.model if judge else None,
@@ -138,6 +138,14 @@ async def main(argv: Sequence[str]) -> int:
     print(markdown)
     print(f"Report: {json_path}\n        {md_path}", file=sys.stderr)
     return 0 if report.summary.passed else 1
+
+
+def _shown(path: Path) -> str:
+    """The path relative to the working directory, so reports read the same everywhere."""
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except ValueError:
+        return str(path)
 
 
 def _progress(run: CaseRun) -> None:

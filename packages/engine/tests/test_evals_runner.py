@@ -354,3 +354,15 @@ def test_repo_thresholds_load() -> None:
     assert thresholds.deterministic["injection_rejection"] == 1.0
     assert thresholds.deterministic["tool_correctness"] == 0.95
     assert set(thresholds.judge) == {RELEVANCY, FAITHFULNESS, CORRECTNESS}
+
+
+def test_report_shows_the_flow_path_relative_to_the_working_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from rozmova_engine.evals.__main__ import _shown
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "flows").mkdir()
+
+    assert _shown(tmp_path / "flows" / "demo.json") == "flows/demo.json"
+    assert _shown(Path("/elsewhere/demo.json")) == "/elsewhere/demo.json"

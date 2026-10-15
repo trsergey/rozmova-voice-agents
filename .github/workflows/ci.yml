@@ -125,9 +125,10 @@ jobs:
             echo "evals=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # Evals cost money: they wait for lint and tests, so broken code is never evaluated.
   eval-pr:
     name: evals (fast, informational)
-    needs: [changes]
+    needs: [changes, lint, test]
     if: needs.changes.outputs.evals == 'true'
     permissions:
       contents: read
@@ -140,6 +141,7 @@ jobs:
 
   eval-release:
     name: evals (full, blocks the release)
+    needs: [lint, test]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
