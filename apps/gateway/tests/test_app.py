@@ -28,6 +28,7 @@ from gateway.bots import BotLoader, BotRuntime, BotUnavailableError, StaticBotLo
 from gateway.calls import Calls
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import tickets
+from rozmova_core.call_events import STREAM
 from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
 from rozmova_engine.providers import TextDelta, ToolCall
@@ -217,6 +218,64 @@ def test_unknown_bot_is_refused() -> None:
 def test_gateway_needs_a_ticket_secret() -> None:
     with pytest.raises(RuntimeError, match="ROZMOVA_TICKET_SECRET"):
         create_app(NoBots(), FakeAsyncRedis(), Settings(ticket_secret=None))
+
+
+# --- call events (ROZ-52) ---------------------------------------------------------------
+
+
+def call_and_read_stream(gateway: Gateway) -> tuple[UUID, list[dict[str, str]]]:
+    """A call with one balance turn and a hangup; the app's shutdown flushes the events."""
+    bot_id, call_id = uuid4(), uuid4()
+    ticket = gateway.ticket(bot_id, call_id)
+    with (
+        TestClient(gateway.app) as http,
+        http.websocket_connect(url(bot_id, call_id, ticket)) as ws,
+    ):
+        while ws.receive_json()["type"] != "turn_end":
+            pass
+        ws.send_json({"type": "user_text", "text": "баланс"})
+        while ws.receive_json()["type"] != "turn_end":
+            pass
+        ws.send_json({"type": "hangup"})
+        while ws.receive_json()["type"] != "session_end":
+            pass
+
+    async def read() -> list[dict[str, str]]:
+        redis = gateway.redis()
+        try:
+            raw: Any = await redis.xrange(STREAM)
+            return [fields for _, fields in raw]
+        finally:
+            await redis.aclose()
+
+    return call_id, asyncio.run(read())
+
+
+def test_a_call_is_written_to_the_call_events_stream(gateway: Gateway) -> None:
+    call_id, entries = call_and_read_stream(gateway)
+
+    assert {e["call_id"] for e in entries} == {str(call_id)}
+    types = [e["type"] for e in entries]
+    assert types[0] == "session_started"
+    assert types[-2:] == ["session_end", "session_closed"]
+    assert {"user_message", "tool_call", "tool_result", "assistant_message"} <= set(types)
+    started = json.loads(entries[0]["payload"])
+    assert started["user_id"] == "viewer-1"
+    assert started["debug"] is False
+
+
+@pytest.mark.integration
+def test_call_events_reach_a_real_redis_capped(redis_url: str) -> None:
+    """The pipelined ``XADD … MAXLEN ~`` against a real server, not only fakeredis."""
+    gateway = Gateway(
+        StaticBotLoader(FLOW, balance_provider(), "gpt-4.1-mini"),
+        redis=lambda: create_redis(Settings(redis_url=SecretStr(redis_url))),
+    )
+    call_id, entries = call_and_read_stream(gateway)
+
+    mine = [e for e in entries if e["call_id"] == str(call_id)]
+    assert [e["type"] for e in mine][-1] == "session_closed"
+    assert all(json.loads(e["payload"]) is not None for e in mine)
 
 
 # --- reconnect (FR-21) ------------------------------------------------------------------

@@ -12,11 +12,13 @@ import pytest
 from fakeredis import FakeAsyncRedis
 from starlette.websockets import WebSocketDisconnect
 
+from gateway.call_events import CallEventWriter, CallRecorder
 from gateway.limits import CallLimits
 from gateway.outbox import Outbox
 from gateway.session import Session
 from gateway.state_store import SessionStore, session_key
 from rozmova_contracts.flow import FlowGraph
+from rozmova_core.call_events import CallEvent
 from rozmova_engine.flow import FlowExecutor
 from rozmova_engine.providers import ProviderError, TextDelta, ToolCall
 from rozmova_engine.providers.fake import Delay, FakeProvider, Raise, Step, text_turn
@@ -99,8 +101,10 @@ class Call:
         redis: FakeAsyncRedis | None = None,
         resume: tuple[SessionStore, SessionState] | None = None,
         limits: CallLimits | None = None,
+        events: CallEventWriter | None = None,
     ) -> None:
-        """``redis`` persists the state; ``resume`` is a claimed store and its state."""
+        """``redis`` persists the state; ``resume`` is a claimed store and its state;
+        ``events`` records the call."""
         self.transport = FakeTransport()
         self.provider = provider = FakeProvider(llm_calls)
         registry = ToolRegistry(subscriber_tools(MockBilling(demo_subscribers())))
@@ -124,6 +128,11 @@ class Call:
             store=store,
             resumed=self.resumed,
             limits=limits,
+            recorder=CallRecorder(
+                events, call_id=state.call_id, bot_id=state.bot_id, user_id="code:c-1", debug=debug
+            )
+            if events is not None
+            else None,
         )
         self.task: asyncio.Task[None] | None = None
 
@@ -622,3 +631,66 @@ async def test_call_time_counts_from_the_start_and_lets_the_turn_finish() -> Non
     assert call.transport.types()[-3:] == ["assistant_delta", "turn_end", "session_end"]
     assert "turn_cancelled" not in call.transport.types()
     assert call.transport.sent[-1]["reason"] == "limit"
+
+
+# --- call events (ROZ-52) ---------------------------------------------------------------
+
+
+class Recorded(CallEventWriter):
+    """Keeps what the session records."""
+
+    def __init__(self) -> None:
+        super().__init__(FakeAsyncRedis())
+        self.events: list[CallEvent] = []
+
+    def record(self, event: CallEvent) -> None:
+        self.events.append(event)
+
+
+async def test_a_viewers_call_is_recorded_with_the_debug_events_they_do_not_get() -> None:
+    llm: list[list[Step]] = [
+        [ToolCall(id="c1", name="get_balance")],
+        text_turn("На рахунку 120,50 грн."),
+    ]
+    events = Recorded()
+    async with Call(*llm, events=events) as call:
+        call.transport.send({"type": "user_text", "text": "скільки в мене грошей"})
+        await call.transport.until("turn_end", 2)
+        call.transport.send({"type": "hangup"})
+        await call.ended()
+
+    assert "tool_call" not in call.transport.types()  # a viewer: no debug events sent
+    recorded = [(e.type, e.payload) for e in events.events]
+    types = [t for t, _ in recorded]
+    assert types == [
+        "session_started",
+        "node_enter",
+        "assistant_message",
+        "turn_end",
+        "user_message",
+        "node_enter",
+        "tool_call",
+        "tool_result",
+        "assistant_message",
+        "turn_end",
+        "session_end",
+        "session_closed",
+    ]
+    assert recorded[0][1]["user_id"] == "code:c-1"
+    assert recorded[2][1]["text"].startswith("Вітаю!")
+    assert recorded[4][1] == {"text": "скільки в мене грошей"}
+    assert recorded[6][1] == {"turn_id": 2, "name": "get_balance", "args": {}}
+    assert recorded[8][1] == {"turn_id": 2, "text": "На рахунку 120,50 грн.", "interrupted": False}
+    assert recorded[10][1] == {"reason": "hangup"}
+    assert recorded[11][1] == {"code": 1000, "resumable": False}
+    assert {e.call_id for e in events.events} == {call.session.call_id}
+
+
+async def test_a_dropped_connection_is_recorded_as_resumable() -> None:
+    events = Recorded()
+    async with Call(events=events) as call:
+        call.transport.send(DISCONNECT)
+        await call.ended()
+
+    assert events.events[-1].type == "session_closed"
+    assert events.events[-1].payload == {"code": None, "resumable": True}

@@ -22,6 +22,9 @@ When the session closes, the state is saved again before the socket is closed (a
 cut off by a disconnect is in it as ``interrupted``), or dropped if the call is over. A
 resumed session starts with ``session_started{resumed: true, history}`` and no greeting.
 
+Every event also goes to the call's ``CallRecorder`` (``call_events.py``), debug-only ones
+included, together with the subscriber's utterances and how the connection closed.
+
 A session can be asked to stop (``_request_stop``): it starts no new turns, lets the
 running one finish until a deadline, then sends ``session_end`` with the reason.
 
@@ -44,6 +47,7 @@ from pydantic import ValidationError
 from redis.exceptions import RedisError
 from starlette.websockets import WebSocketDisconnect
 
+from gateway.call_events import CallRecorder
 from gateway.limits import CallLimits
 from gateway.outbox import Outbox, OutboxStalledError
 from gateway.state_store import SessionStore
@@ -104,15 +108,17 @@ class Session:
         store: SessionStore | None = None,
         resumed: bool = False,
         limits: CallLimits | None = None,
+        recorder: CallRecorder | None = None,
     ) -> None:
         """``store`` is ``None`` when the state is not persisted, ``limits`` when the call
-        is not limited (tests, evals)."""
+        is not limited (tests, evals), ``recorder`` when the call is not recorded."""
         self._transport = transport
         self._executor = executor
         self.state = state
         self._store = store
         self._resumed = resumed
         self._limits = limits
+        self._recorder = recorder
         self._debug = debug
         # Not `outbox or Outbox()`: an empty Outbox is falsy (it has __len__).
         self._outbox = outbox if outbox is not None else Outbox()
@@ -164,7 +170,10 @@ class Session:
         self._stop.set()
 
     async def emit(self, event: protocol.ProtocolMessage) -> None:
-        """Queue an event for the client; debug-only events only in debug sessions."""
+        """Record the event and queue it for the client; debug-only events reach only
+        debug sessions."""
+        if self._recorder is not None:
+            self._recorder.observe(event)
         if event.debug_only and not self._debug:
             return
         try:
@@ -326,6 +335,8 @@ class Session:
 
     async def _run_turn(self, text: str) -> None:
         """One subscriber turn, saved before its ``turn_end``."""
+        if self._recorder is not None:
+            self._recorder.user_message(text)
         timer = TurnTimer()
         outcome = await self._handle(text, timer)
         await self._save()
@@ -432,6 +443,8 @@ class Session:
         if closing.code is not None:
             with suppress(Exception):
                 await self._transport.close(code=closing.code)
+        if self._recorder is not None:
+            self._recorder.closed(closing.code, resumable=closing.keep_state)
         log.info("session_closed", code=closing.code)
 
     async def _send_quietly(self, event: protocol.ProtocolMessage) -> None:

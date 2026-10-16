@@ -12,6 +12,9 @@ A new call runs on the bot's live version; a resumed call keeps the version it s
 (``bot_version`` in its saved state), even if a newer one was published meanwhile.
 ``?draft=true`` runs the draft instead, for debug tickets only (the admin's test console).
 
+Every call is recorded to the Redis Stream ``call-events`` through one ``CallEventWriter``
+(ROZ-52); admin-api persists it.
+
 ``kb`` answers ``kb_answer`` nodes and backs the ``search_knowledge_base`` tool (ROZ-43).
 """
 
@@ -25,6 +28,7 @@ from fastapi import FastAPI, Response, WebSocket
 from redis.asyncio import Redis
 
 from gateway.bots import BotLoader, BotRuntime, BotUnavailableError
+from gateway.call_events import CallEventWriter, CallRecorder
 from gateway.calls import Calls
 from gateway.limits import RateLimiter
 from gateway.session import Session
@@ -96,15 +100,19 @@ def create_app(
     limiter = RateLimiter(redis, settings)
     billing = MockBilling(demo_subscribers())
     registry = ToolRegistry([*subscriber_tools(billing), *(knowledge_tools(kb) if kb else [])])
+    events = CallEventWriter(redis)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         watch = asyncio.create_task(loader.watch(), name="bot-cache-watch")
+        events.start()
         try:
             yield
         finally:
             watch.cancel()
             await asyncio.wait([watch])
+            # After the calls have drained: their last events are still queued.
+            await events.aclose()
             await loader.aclose()
             await redis.aclose()
             close_kb = getattr(kb, "aclose", None)
@@ -253,6 +261,13 @@ def create_app(
             store=store,
             resumed=resumed,
             limits=limiter.for_call(grant.user_id),
+            recorder=CallRecorder(
+                events,
+                call_id=state.call_id,
+                bot_id=bot_id,
+                user_id=grant.user_id,
+                debug=grant.debug,
+            ),
         )
 
         bound = log_context(
