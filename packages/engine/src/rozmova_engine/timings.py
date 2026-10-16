@@ -20,6 +20,9 @@ class TurnTimer:
         self._started = clock()
         self._first_text: float | None = None
         self.stages: dict[str, float] = {}
+        # The type of the node running now, and of the one that sent the first text.
+        self.node_type: str | None = None
+        self.first_text_node_type: str | None = None
 
     def elapsed_ms(self) -> float:
         return (self._clock() - self._started) * 1000
@@ -40,6 +43,7 @@ class TurnTimer:
         """Mark the first text sent to the subscriber; later calls are ignored."""
         if self._first_text is None:
             self._first_text = self._clock()
+            self.first_text_node_type = self.node_type
 
     def to_timings(self) -> TurnTimings:
         ttft = None if self._first_text is None else (self._first_text - self._started) * 1000

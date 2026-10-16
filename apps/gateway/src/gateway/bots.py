@@ -42,6 +42,7 @@ class BotRuntime:
     provider: LLMProvider
     model: str
     bot_version: int | None  # None for a draft
+    provider_name: str = "static"  # the bot's provider setting; labels metrics and spans
 
 
 class BotUnavailableError(Exception):
@@ -147,7 +148,7 @@ class PublishedBotLoader:
         except Exception as exc:  # any SDK error while building a client; not BaseException
             log.exception("provider_unavailable", bot_id=str(bot_id), provider=spec.provider)
             raise BotUnavailableError(f"provider {spec.provider}") from exc
-        return BotRuntime(spec.flow, provider, spec.model, spec.version)
+        return BotRuntime(spec.flow, provider, spec.model, spec.version, spec.provider)
 
     def invalidate(self, bot_id: UUID) -> None:
         self._live.pop(bot_id, None)

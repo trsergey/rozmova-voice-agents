@@ -39,6 +39,7 @@ from rozmova_contracts.flow import (
     ToolNode,
 )
 from rozmova_engine.flow.jsonlogic import JSONLogicError, evaluate, truthy
+from rozmova_engine.observability import tracer
 from rozmova_engine.providers import Message, ToolCall, Usage
 from rozmova_engine.session import HistoryEntry, SessionState
 from rozmova_engine.timings import TurnTimer
@@ -160,55 +161,59 @@ class FlowExecutor:
                     return outcome
                 await self._emit(protocol.NodeEnter(node_id=node.id))
 
-                match node:
-                    case StartNode():
-                        await self._say(state, node.data.greeting, outcome, timer)
-                        node_id = self._next(node.id)
-                    case LLMPromptNode():
-                        utterance = False
-                        result = await self._loop.run(
-                            state,
-                            timer,
-                            system=[node.data.prompt],
-                            tools=node.data.tools,
-                            routes=node.data.routes,
-                        )
-                        outcome.add_usage(result.usage)
-                        outcome.add_text(result.text)
-                        if result.outcome == "handoff":
-                            return await self._handoff(
-                                state, result.handoff_reason or "tool_loop_limit", outcome
+                timer.node_type = node.type
+                with tracer.start_as_current_span(
+                    "flow.node", attributes={"node.id": node.id, "node.type": node.type}
+                ):
+                    match node:
+                        case StartNode():
+                            await self._say(state, node.data.greeting, outcome, timer)
+                            node_id = self._next(node.id)
+                        case LLMPromptNode():
+                            utterance = False
+                            result = await self._loop.run(
+                                state,
+                                timer,
+                                system=[node.data.prompt],
+                                tools=node.data.tools,
+                                routes=node.data.routes,
                             )
-                        if result.outcome == "route":
-                            node_id = self._route(node.id, result.route or "")
-                            utterance = True
-                            continue
-                        if (after := self._default.get(node.id)) is None:
-                            state.current_node = node.id
+                            outcome.add_usage(result.usage)
+                            outcome.add_text(result.text)
+                            if result.outcome == "handoff":
+                                return await self._handoff(
+                                    state, result.handoff_reason or "tool_loop_limit", outcome
+                                )
+                            if result.outcome == "route":
+                                node_id = self._route(node.id, result.route or "")
+                                utterance = True
+                                continue
+                            if (after := self._default.get(node.id)) is None:
+                                state.current_node = node.id
+                                return outcome
+                            node_id = after
+                        case KBAnswerNode():
+                            utterance = False
+                            reply = await self._answer_from_kb(node, state, timer)
+                            outcome.add_usage(reply.usage)
+                            outcome.add_text(reply.text)
+                            outcome.sources.extend(reply.sources)
+                            if (after := self._default.get(node.id)) is None:
+                                state.current_node = node.id
+                                return outcome
+                            node_id = after
+                        case ToolNode():
+                            await self._run_tool_node(node, state, timer)
+                            node_id = self._next(node.id)
+                        case ConditionNode():
+                            node_id = self._branch(node, state)
+                        case HandoffNode():
+                            return await self._handoff(state, node.data.reason, outcome)
+                        case EndNode():
+                            await self._say(state, node.data.farewell, outcome, timer)
+                            state.current_node = None
+                            outcome.ended = "completed"
                             return outcome
-                        node_id = after
-                    case KBAnswerNode():
-                        utterance = False
-                        reply = await self._answer_from_kb(node, state, timer)
-                        outcome.add_usage(reply.usage)
-                        outcome.add_text(reply.text)
-                        outcome.sources.extend(reply.sources)
-                        if (after := self._default.get(node.id)) is None:
-                            state.current_node = node.id
-                            return outcome
-                        node_id = after
-                    case ToolNode():
-                        await self._run_tool_node(node, state, timer)
-                        node_id = self._next(node.id)
-                    case ConditionNode():
-                        node_id = self._branch(node, state)
-                    case HandoffNode():
-                        return await self._handoff(state, node.data.reason, outcome)
-                    case EndNode():
-                        await self._say(state, node.data.farewell, outcome, timer)
-                        state.current_node = None
-                        outcome.ended = "completed"
-                        return outcome
         except FlowError as err:
             return await self._fail(state, str(err), HANDOFF_FLOW_ERROR, outcome)
         return await self._fail(

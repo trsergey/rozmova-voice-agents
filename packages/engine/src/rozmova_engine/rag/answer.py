@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from rozmova_contracts import protocol
 from rozmova_contracts.flow import KBAnswerNode
 from rozmova_engine.flow.executor import KBReply
+from rozmova_engine.observability import tracer
 from rozmova_engine.providers import Message
 from rozmova_engine.rag.embeddings import Embedder
 from rozmova_engine.rag.search import SearchHit, SearchResult, search_kb
@@ -70,10 +71,15 @@ class KnowledgeBase:
         self._timeout_s = timeout_s
 
     async def search(self, query: str, *, top_k: int, min_similarity: float) -> SearchResult:
-        async with asyncio.timeout(self._timeout_s), self._sessions() as db:
-            return await search_kb(
-                db, self._embedder, query, top_k=top_k, min_similarity=min_similarity
-            )
+        with tracer.start_as_current_span("rag.search", attributes={"rag.top_k": top_k}) as span:
+            async with asyncio.timeout(self._timeout_s), self._sessions() as db:
+                result = await search_kb(
+                    db, self._embedder, query, top_k=top_k, min_similarity=min_similarity
+                )
+            span.set_attribute("rag.hits", len(result.hits))
+            if result.best_similarity is not None:
+                span.set_attribute("rag.best_similarity", round(result.best_similarity, 3))
+            return result
 
     async def aclose(self) -> None:
         """Close the embedder's HTTP client; the database engine belongs to the caller."""

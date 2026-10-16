@@ -6,11 +6,8 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # The gateway serves /metrics (ROZ-53); admin-api has none yet.
   - job_name: gateway
-    static_configs:
-      - targets: ["host.docker.internal:8000"]
-
-  - job_name: admin-api
     static_configs:
       - targets: ["host.docker.internal:8001"]
 

@@ -49,6 +49,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from gateway.call_events import CallRecorder
 from gateway.limits import CallLimits
+from gateway.metrics import TURN_DURATION, TURN_TTFT, WS_DISCONNECTS, close_reason, tracer
 from gateway.outbox import Outbox, OutboxStalledError
 from gateway.state_store import SessionStore
 from rozmova_contracts import protocol
@@ -142,6 +143,7 @@ class Session:
             # call log still shows that the connection ended. Recording does not await.
             if self._recorder is not None:
                 self._recorder.closed(None, resumable=True)
+            WS_DISCONNECTS.labels("cancelled").inc()
             log.info("session_cancelled")
             raise
         finally:
@@ -342,23 +344,42 @@ class Session:
             protocol.SessionStarted(call_id=self.call_id, bot_version=self.state.bot_version)
         )
         timer = TurnTimer()
-        outcome = await self._executor.start(self.state, timer)
-        await self._save()
-        await self._end_turn(outcome, timer)
+        with tracer.start_as_current_span(
+            "turn", attributes={"turn.id": 1, "turn.kind": "greeting"}
+        ):
+            outcome = await self._executor.start(self.state, timer)
+            await self._save()
+            await self._end_turn(outcome, timer)
 
     async def _run_turn(self, text: str) -> None:
         """One subscriber turn, saved before its ``turn_end``."""
         if self._recorder is not None:
             self._recorder.user_message(text)
         timer = TurnTimer()
-        outcome = await self._handle(text, timer)
-        await self._save()
-        if outcome is not None:
-            await self._end_turn(outcome, timer)
+        label = "cancelled"  # unless the turn gets further
+        with tracer.start_as_current_span("turn", attributes={"turn.kind": "utterance"}) as span:
+            try:
+                outcome = await self._handle(text, timer)
+                span.set_attribute("turn.id", self.state.turn)
+                label = outcome if isinstance(outcome, str) else "ok"
+                span.set_attribute("turn.outcome", label)
+                await self._save()
+                if not isinstance(outcome, str):
+                    await self._end_turn(outcome, timer)
+            finally:
+                self._observe_turn(timer, label)
         self._check_turn_limit()
 
-    async def _handle(self, text: str, timer: TurnTimer) -> TurnOutcome | None:
-        """Run the turn; a failure becomes an ``error`` event and ``None``, the call goes on."""
+    def _observe_turn(self, timer: TurnTimer, label: str) -> None:
+        """Turn metrics; no await, so a cancelled turn is counted too."""
+        bot_id = str(self.state.bot_id)
+        TURN_DURATION.labels(bot_id, label).observe(timer.elapsed_ms() / 1000)
+        ttft = timer.to_timings().ttft_ms
+        if ttft is not None:
+            TURN_TTFT.labels(bot_id, timer.first_text_node_type or "unknown").observe(ttft / 1000)
+
+    async def _handle(self, text: str, timer: TurnTimer) -> TurnOutcome | str:
+        """Run the turn; a failure becomes an ``error`` event and its code, the call goes on."""
         try:
             async with asyncio.timeout(self._turn_timeout):
                 outcome = await self._executor.handle(self.state, text, timer)
@@ -371,7 +392,7 @@ class Session:
                     code="turn_timeout", message="The turn took too long.", retryable=True
                 )
             )
-            return None
+            return "turn_timeout"
         except ProviderError as err:
             log.warning("llm_unavailable", error=str(err), retryable=err.retryable)
             await self.emit(
@@ -381,11 +402,11 @@ class Session:
                     retryable=err.retryable,
                 )
             )
-            return None
+            return "llm_unavailable"
         except Exception:
             log.exception("turn_failed", turn_id=self.state.turn)
             await self.emit(protocol.Error(code="internal", message="The turn failed."))
-            return None
+            return "internal"
         return outcome
 
     async def _end_turn(self, outcome: TurnOutcome, timer: TurnTimer) -> None:
@@ -458,6 +479,7 @@ class Session:
                 await self._transport.close(code=closing.code)
         if self._recorder is not None:
             self._recorder.closed(closing.code, resumable=closing.keep_state)
+        WS_DISCONNECTS.labels(close_reason(closing.code)).inc()
         log.info("session_closed", code=closing.code)
 
     async def _send_quietly(self, event: protocol.ProtocolMessage) -> None:

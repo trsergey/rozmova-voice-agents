@@ -23,6 +23,7 @@ from rozmova_core.db import create_engine, create_session_factory
 from rozmova_core.log import configure_logging
 from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
+from rozmova_core.telemetry import init_telemetry, shutdown_telemetry
 from rozmova_engine.rag.answer import KnowledgeBase, KnowledgeSearch, UnavailableKnowledgeBase
 from rozmova_engine.rag.embeddings import OpenAIEmbedder
 
@@ -88,6 +89,8 @@ def knowledge_base(
 def build() -> GatewayServer:
     settings = Settings()
     configure_logging(settings)
+    # Traces only with OTEL_EXPORTER_OTLP_ENDPOINT; without it the tracer stays a no-op.
+    init_telemetry(settings)
     redis = create_redis(settings)
     demo = DemoKeySettings()
     # One pool for bots and the knowledge base; the loader disposes it on shutdown.
@@ -100,7 +103,10 @@ def build() -> GatewayServer:
 
 
 def main() -> None:
-    build().run()
+    try:
+        build().run()
+    finally:
+        shutdown_telemetry()
 
 
 if __name__ == "__main__":

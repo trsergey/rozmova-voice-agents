@@ -5,7 +5,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.util._once import Once
 
 from rozmova_core.settings import Settings
-from rozmova_core.telemetry import init_telemetry
+from rozmova_core.telemetry import init_telemetry, shutdown_telemetry
 
 
 @pytest.fixture(autouse=True)
@@ -46,3 +46,19 @@ def test_default_exporter_targets_traces_path() -> None:
     processor = provider._active_span_processor._span_processors[0]
     assert processor.span_exporter._endpoint == "http://jaeger:4318/v1/traces"  # type: ignore[attr-defined]
     provider.shutdown()
+
+
+def test_shutdown_flushes_the_installed_provider() -> None:
+    exporter = InMemorySpanExporter()
+    settings = Settings(service_name="gateway", otel_exporter_otlp_endpoint="http://jaeger:4318")
+    init_telemetry(settings, exporter=exporter)
+    with trace.get_tracer("test").start_as_current_span("call"):
+        pass
+
+    shutdown_telemetry()  # the batch processor exports what it holds
+
+    assert [span.name for span in exporter.get_finished_spans()] == ["call"]
+
+
+def test_shutdown_without_a_provider_is_a_no_op() -> None:
+    shutdown_telemetry()

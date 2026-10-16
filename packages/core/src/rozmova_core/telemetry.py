@@ -36,3 +36,10 @@ def init_telemetry(
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     return provider
+
+
+def shutdown_telemetry() -> None:
+    """Flush and stop the global provider ``init_telemetry`` installed; a no-op otherwise."""
+    provider = trace.get_tracer_provider()
+    if isinstance(provider, TracerProvider):
+        provider.shutdown()

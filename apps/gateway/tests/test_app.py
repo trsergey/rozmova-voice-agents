@@ -18,6 +18,11 @@ import pytest
 import websockets
 from fakeredis import FakeAsyncRedis, FakeServer
 from fastapi.testclient import TestClient
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from prometheus_client import REGISTRY
 from pydantic import SecretStr
 from redis.asyncio import Redis
 from starlette.testclient import WebSocketDenialResponse
@@ -276,6 +281,109 @@ def test_call_events_reach_a_real_redis_capped(redis_url: str) -> None:
     mine = [e for e in entries if e["call_id"] == str(call_id)]
     assert [e["type"] for e in mine][-1] == "session_closed"
     assert all(json.loads(e["payload"]) is not None for e in mine)
+
+
+# --- metrics and spans (ROZ-53) ------------------------------------------------------------
+
+
+@pytest.fixture
+def spans() -> Iterator[InMemorySpanExporter]:
+    """Spans recorded during the test; added to the global provider, which can be set once."""
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    yield exporter
+    exporter.shutdown()
+
+
+def sample(name: str, **labels: str) -> float:
+    return REGISTRY.get_sample_value(name, labels) or 0.0
+
+
+def test_metrics_lists_the_sdd_metrics(gateway: Gateway) -> None:
+    with TestClient(gateway.app) as http:
+        response = http.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    for name in (
+        "rozmova_active_sessions",
+        "rozmova_turn_duration_seconds",
+        "rozmova_turn_ttft_seconds",
+        "rozmova_llm_ttft_seconds",
+        "rozmova_tool_calls_total",
+        "rozmova_llm_tokens_total",
+        "rozmova_ws_disconnects_total",
+    ):
+        assert f"# TYPE {name.removesuffix('_total')}" in response.text, name
+
+
+def test_a_call_is_measured_and_traced(gateway: Gateway, spans: InMemorySpanExporter) -> None:
+    bot_id = uuid4()
+    bot = str(bot_id)
+    ttft_before = sample("rozmova_turn_ttft_seconds_count", bot_id=bot, node_type="llm_prompt")
+    normal_before = sample("rozmova_ws_disconnects_total", reason="normal")
+    call_id = uuid4()
+
+    with (
+        TestClient(gateway.app) as http,
+        http.websocket_connect(url(bot_id, call_id, gateway.ticket(bot_id, call_id))) as ws,
+    ):
+        while ws.receive_json()["type"] != "turn_end":
+            pass
+        assert sample("rozmova_active_sessions", bot_id=bot) == 1
+        ws.send_json({"type": "user_text", "text": "баланс"})
+        while ws.receive_json()["type"] != "turn_end":
+            pass
+        ws.send_json({"type": "hangup"})
+        while ws.receive_json()["type"] != "session_end":
+            pass
+
+    # The greeting is not a subscriber turn: only the utterance counts for the PRD TTFT.
+    assert (
+        sample("rozmova_turn_ttft_seconds_count", bot_id=bot, node_type="llm_prompt")
+        == ttft_before + 1
+    )
+    assert sample("rozmova_turn_duration_seconds_count", bot_id=bot, outcome="ok") == 1
+    assert sample("rozmova_active_sessions", bot_id=bot) == 0
+    assert sample("rozmova_ws_disconnects_total", reason="normal") == normal_before + 1
+
+    finished = spans.get_finished_spans()
+    by_id = {s.context.span_id: s for s in finished if s.context is not None}
+    [call] = [s for s in finished if s.name == "call"]
+    assert call.attributes is not None
+    assert call.attributes["call.id"] == str(call_id)
+    turns = [s for s in finished if s.name == "turn"]
+    assert [t.attributes["turn.kind"] for t in turns if t.attributes] == ["greeting", "utterance"]
+    [tool] = [s for s in finished if s.name == "tool.get_balance"]
+
+    def ancestors(span: Any) -> list[str]:
+        names = []
+        while span.parent is not None and span.parent.span_id in by_id:
+            span = by_id[span.parent.span_id]
+            names.append(span.name)
+        return names
+
+    # Above `call` FastAPI adds its own request spans.
+    assert ancestors(tool)[:3] == ["flow.node", "turn", "call"]
+    assert call.context is not None
+    trace_id = call.context.trace_id
+    assert {s.context.trace_id for s in finished if s.context and s.name != "call"} >= {trace_id}
+
+    # The call events carry the call's trace (ROZ-52).
+    async def read() -> list[dict[str, str]]:
+        redis = gateway.redis()
+        try:
+            raw: Any = await redis.xrange(STREAM)
+            return [fields for _, fields in raw if fields["call_id"] == str(call_id)]
+        finally:
+            await redis.aclose()
+
+    entries = asyncio.run(read())
+    assert {e.get("trace_id") for e in entries} == {format(trace_id, "032x")}
 
 
 # --- reconnect (FR-21) ------------------------------------------------------------------

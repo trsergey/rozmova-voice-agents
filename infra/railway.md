@@ -22,6 +22,10 @@ project is set up, so it can be rebuilt by hand or checked against the dashboard
 The public demo page is `https://admin-api-dev-0e9c.up.railway.app/demo/` (the root redirects
 there): an access code from `POST /access-codes`, then a chat with the demo bot (ROZ-68).
 
+The gateway serves Prometheus metrics at `/metrics` (ROZ-53): no secrets in the labels
+(bot ids, tool and model names), so it stays public on the demo. Traces are exported only
+when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; Railway has none, so nothing is sent.
+
 PostgreSQL and Redis have no TCP proxy: they are reachable only over the private network.
 The images are public in GHCR (they inherit the repository's visibility), so Railway pulls
 them without registry credentials.

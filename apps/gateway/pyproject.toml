@@ -5,6 +5,7 @@ description = "Dialogue gateway: WebSocket sessions on top of the engine."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.120",
+    "prometheus-client>=0.23",
     "rozmova-contracts",
     "rozmova-core",
     "rozmova-engine",

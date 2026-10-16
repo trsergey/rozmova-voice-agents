@@ -9,6 +9,10 @@ from uuid import UUID, uuid4
 
 import pytest
 from fakeredis import FakeAsyncRedis
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import SecretStr
 from redis.asyncio import Redis
 from sqlalchemy import delete, select
@@ -258,6 +262,34 @@ async def test_entries_left_by_a_crashed_consumer_are_claimed_on_start(world: Wo
 
     assert [t for t, _ in await world.events(call_id)] == ["session_started", "user_message"]
     assert await world.pending() == 0
+
+
+async def test_the_persist_span_links_to_the_calls_trace(world: World) -> None:
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
+    spans = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(spans))
+    call_id = uuid4()
+    traced = CallEvent(
+        call_id=call_id,
+        bot_id=world.bot_id,
+        type="session_started",
+        payload={"bot_version": 1, "user_id": "x"},
+        trace_id="0af7651916cd43dd8448eb211c80319c",
+        span_id="b7ad6b7169203331",
+    )
+    await world.redis.xadd(STREAM, traced.fields())  # type: ignore[arg-type]
+    await world.add(call_id, "user_message", at=1, text="без трейсу")
+    await consume_all(consumer(world))
+    spans.shutdown()
+
+    [persist] = [s for s in spans.get_finished_spans() if s.name == "call_log.persist"]
+    assert [
+        (format(link.context.trace_id, "032x"), format(link.context.span_id, "016x"))
+        for link in persist.links
+    ] == [("0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331")]
 
 
 @pytest.fixture(scope="module")

@@ -25,12 +25,14 @@ from uuid import UUID
 
 import structlog
 from fastapi import FastAPI, Response, WebSocket
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from redis.asyncio import Redis
 
 from gateway.bots import BotLoader, BotRuntime, BotUnavailableError
 from gateway.call_events import CallEventWriter, CallRecorder
 from gateway.calls import Calls
 from gateway.limits import RateLimiter
+from gateway.metrics import ACTIVE_SESSIONS, tracer
 from gateway.session import Session
 from gateway.state_store import SessionStore
 from rozmova_contracts import protocol
@@ -171,6 +173,10 @@ def create_app(
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
     @app.websocket("/ws/calls/{bot_id}")
     async def call(
         websocket: WebSocket,
@@ -250,7 +256,9 @@ def create_app(
         async def emit(event: protocol.ProtocolMessage) -> None:
             await session.emit(event)
 
-        loop = ToolLoop(bot.provider, bot.model, registry, ctx, emit)
+        loop = ToolLoop(
+            bot.provider, bot.model, registry, ctx, emit, provider_name=bot.provider_name
+        )
         answerer = KnowledgeBaseAnswerer(kb, loop, emit) if kb is not None else None
         executor = FlowExecutor(bot.flow, loop, registry, ctx, emit, kb=answerer)
         session = Session(
@@ -276,10 +284,25 @@ def create_app(
             bot_version=bot.bot_version,
             user_id=grant.user_id,
         )
-        with bound, calls.track(session):
+        span_attributes: dict[str, str | int | bool] = {
+            "call.id": str(state.call_id),
+            "bot.id": str(bot_id),
+            "bot.version": bot.bot_version if bot.bot_version is not None else -1,
+            "call.resumed": resumed,
+        }
+        active = ACTIVE_SESSIONS.labels(str(bot_id))
+        with (
+            bound,
+            calls.track(session),
+            tracer.start_as_current_span("call", attributes=span_attributes),
+        ):
             log.info(
                 "session_opened", resumed=resumed, turn=state.turn, client_ip=client_ip(websocket)
             )
-            await session.run()
+            active.inc()
+            try:
+                await session.run()
+            finally:
+                active.dec()
 
     return app

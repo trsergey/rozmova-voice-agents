@@ -22,12 +22,16 @@ Limits:
 import asyncio
 import contextlib
 import json
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Literal
 
+from opentelemetry import trace
+
 from rozmova_contracts import protocol
+from rozmova_engine.observability import LLM_TOKENS, LLM_TTFT, TOOL_CALLS, tracer
 from rozmova_engine.providers import (
     LLMProvider,
     Message,
@@ -97,8 +101,11 @@ class ToolLoop:
         *,
         max_iterations: int = MAX_ITERATIONS,
         first_token_timeout: float = FIRST_TOKEN_TIMEOUT,
+        provider_name: str = "unknown",
     ) -> None:
+        """``provider_name`` labels the LLM metrics and spans (the bot's provider setting)."""
         self._provider = provider
+        self._provider_name = provider_name
         self._model = model
         self._registry = registry
         self._ctx = ctx
@@ -167,11 +174,15 @@ class ToolLoop:
         parts: list[str] = []
         calls: list[ToolCall] = []
         usage: Usage | None = None
+        span_attributes = {"llm.provider": self._provider_name, "llm.model": self._model}
         try:
-            with timer.stage("llm_total"):
+            with (
+                tracer.start_as_current_span("llm.stream", attributes=span_attributes) as span,
+                timer.stage("llm_total"),
+            ):
                 stream = self._provider.stream(messages, specs, model=self._model)
                 async with aclosing(stream) as events:
-                    event = await self._first_event(events, timer)
+                    event = await self._first_event(events, timer, span)
                     while event is not None:
                         match event:
                             case TextDelta(text=chunk):
@@ -185,6 +196,8 @@ class ToolLoop:
                             case Usage():
                                 usage = event
                         event = await anext(events, None)
+                if usage is not None:
+                    self._count_tokens(usage, span)
         except asyncio.CancelledError:
             # The subscriber interrupted: keep what they heard, marked as cut off.
             if parts:
@@ -195,13 +208,18 @@ class ToolLoop:
         return "".join(parts), calls, usage
 
     async def _first_event(
-        self, events: AsyncGenerator[StreamEvent], timer: TurnTimer
+        self, events: AsyncGenerator[StreamEvent], timer: TurnTimer, span: trace.Span
     ) -> StreamEvent | None:
         """Wait for the first event within the first-token budget; summed as ``llm_ttft``."""
+        started = time.perf_counter()
         try:
             with timer.stage("llm_ttft"):
                 async with asyncio.timeout(self._first_token_timeout):
-                    return await anext(events, None)
+                    event = await anext(events, None)
+            seconds = time.perf_counter() - started
+            LLM_TTFT.labels(self._provider_name, self._model).observe(seconds)
+            span.set_attribute("ttft_ms", round(seconds * 1000, 1))
+            return event
         except TimeoutError:
             raise ProviderError(
                 f"no first token within {self._first_token_timeout:g} s", retryable=True
@@ -223,6 +241,7 @@ class ToolLoop:
                 except asyncio.CancelledError:
                     result = tool_error("cancelled", "The subscriber interrupted; not run.")
                     interrupted = True
+                    TOOL_CALLS.labels(self._tool_label(call.name), "cancelled").inc()
             content = json.dumps(result, ensure_ascii=False)
             self._remember(state, Message(role="tool", content=content, tool_call_id=call.id))
             if finished_on_cancel:
@@ -250,12 +269,19 @@ class ToolLoop:
             # A route name the node does not have; the LLM gets a chance to fix it.
             result = tool_error("unknown_route", "This route does not exist here.")
         else:
-            with timer.stage(f"tool.{call.name}"):
+            label = self._tool_label(call.name)
+            with (
+                tracer.start_as_current_span(f"tool.{label}") as span,
+                timer.stage(f"tool.{call.name}"),
+            ):
                 work = call_tool(self._registry, call, self._ctx, state)
                 if self._registry.has_side_effect(call.name):
                     result, interrupted = await complete_despite_cancel(work)
                 else:
                     result = await work
+                status = str(result.get("error") or result.get("status") or "ok")
+                span.set_attribute("tool.status", status)
+                TOOL_CALLS.labels(label, "error" if result.get("error") else "ok").inc()
         if interrupted:
             # No await before the caller records the result: a second cancellation must not
             # lose it. The caller emits the ``tool_result`` after recording.
@@ -270,6 +296,16 @@ class ToolLoop:
                 )
             )
         return result, False
+
+    def _count_tokens(self, usage: Usage, span: trace.Span) -> None:
+        LLM_TOKENS.labels(self._provider_name, "input").inc(usage.input_tokens)
+        LLM_TOKENS.labels(self._provider_name, "output").inc(usage.output_tokens)
+        span.set_attribute("llm.input_tokens", usage.input_tokens)
+        span.set_attribute("llm.output_tokens", usage.output_tokens)
+
+    def _tool_label(self, name: str) -> str:
+        """A metric label from a known tool name only: the LLM may invent names."""
+        return name if name in self._registry.names else "unknown"
 
     @staticmethod
     def _remember(state: SessionState, message: Message) -> None:

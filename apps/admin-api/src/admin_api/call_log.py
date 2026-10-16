@@ -13,6 +13,9 @@ One background task in admin-api reads the stream with the consumer group ``pers
    stream entry id, so a redelivered entry is not stored twice.
 4. After the commit the entries are acknowledged (``XACK``) and published to ``calls:live``.
 
+The write of a batch is the span ``call_log.persist``, linked to the span of every event
+that came with a trace context, so a call's trace leads to where its events were stored.
+
 A batch that fails to commit is not acknowledged; the consumer backs off and reads its
 pending entries again. A malformed entry, or one of a bot that no longer exists, is logged
 and acknowledged: it would fail forever otherwise.
@@ -27,6 +30,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import structlog
+from opentelemetry import trace
 from redis.asyncio import Redis
 from redis.exceptions import RedisError, ResponseError
 from sqlalchemy import exists, func, select, update
@@ -38,6 +42,7 @@ from rozmova_core.models import AccessCode, Bot, BotVersion, Call, User
 from rozmova_core.models import CallEvent as CallEventRow
 
 log = structlog.get_logger(__name__)
+tracer = trace.get_tracer("rozmova.admin_api")
 
 GROUP = "persist"
 LIVE_CHANNEL = "calls:live"
@@ -150,6 +155,17 @@ class CallLogConsumer:
             except (KeyError, ValueError) as err:
                 log.warning("call_event_malformed", entry_id=entry_id, error=str(err))
         stored: list[tuple[str, CallEvent]] = []
+        links = [trace.Link(context) for _, event in events if (context := _span_context(event))]
+        with tracer.start_as_current_span(
+            "call_log.persist", links=links, attributes={"call_log.entries": len(entries)}
+        ):
+            await self._write(events, stored)
+        await self._redis.xack(STREAM, GROUP, *[entry_id for entry_id, _ in entries])
+        await self._publish(stored)
+
+    async def _write(
+        self, events: list[tuple[str, CallEvent]], stored: list[tuple[str, CallEvent]]
+    ) -> None:
         async with self._db() as db, db.begin():
             for entry_id, event in events:
                 if await _store(db, entry_id, event):
@@ -161,8 +177,6 @@ class CallLogConsumer:
                         reason="bot_not_found",
                         bot_id=str(event.bot_id),
                     )
-        await self._redis.xack(STREAM, GROUP, *[entry_id for entry_id, _ in entries])
-        await self._publish(stored)
 
     async def _publish(self, stored: list[tuple[str, CallEvent]]) -> None:
         """Best effort: the live view may miss an event, the call log does not."""
@@ -173,6 +187,21 @@ class CallLogConsumer:
                 await pipe.execute()
         except RedisError as err:
             log.warning("calls_live_publish_failed", error=str(err))
+
+
+def _span_context(event: CallEvent) -> trace.SpanContext | None:
+    """The span the gateway recorded the event in, if one was recording."""
+    if event.trace_id is None or event.span_id is None:
+        return None
+    try:
+        return trace.SpanContext(
+            trace_id=int(event.trace_id, 16),
+            span_id=int(event.span_id, 16),
+            is_remote=True,
+            trace_flags=trace.TraceFlags(trace.TraceFlags.SAMPLED),
+        )
+    except ValueError:
+        return None
 
 
 def _live_message(entry_id: str, event: CallEvent) -> str:
