@@ -1,5 +1,5 @@
 # Every PR and every push to main: lint, tests (unit + integration on Docker), contracts,
-# then the service images (pushed to GHCR except on PRs).
+# the admin-web checks, then the service images (pushed to GHCR except on PRs).
 # main deploys to Railway `dev`, a tag v* releases to `demo` (infra/deploy.py: switch the
 # images, wait, smoke test, roll back on failure). A manual run deploys its ref to dev.
 # Integration tests start PostgreSQL (pgvector) and Redis with testcontainers, the same
@@ -67,9 +67,28 @@ jobs:
       - name: Generated files match the commit
         run: git diff --exit-code packages/contracts || (echo "::error::run 'make schemas' and commit the result" && exit 1)
 
+  web:
+    name: web (eslint, tsc, vitest, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/admin-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/admin-web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
   images:
     name: image ${{ matrix.target }} (build; push to GHCR except on PRs)
-    needs: [lint, test, contracts]
+    needs: [lint, test, contracts, web]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

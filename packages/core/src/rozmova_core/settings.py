@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # The gateway's public base URL; admin-api builds the clients' WebSocket URLs from it.
     gateway_public_url: str = "http://localhost:8001"
 
+    # The built admin-web (``apps/admin-web/dist``) that admin-api serves under /demo/;
+    # unset serves no page (the API alone, as in tests and the Vite dev setup).
+    admin_web_dir: Path | None = None
+
     # The admin user admin-api creates or updates on start; both unset skips the seed.
     admin_email: str | None = None
     admin_password: SecretStr | None = None

@@ -5,6 +5,17 @@
 # Railway and the VPS run the same images (SDD "Розгортання").
 
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+ARG NODE_IMAGE=node:22-bookworm-slim
+
+# --- build-web: the admin-web bundle admin-api serves under /demo/ (ROZ-68) ----------------
+FROM ${NODE_IMAGE} AS build-web
+WORKDIR /src/apps/admin-web
+COPY apps/admin-web/package.json apps/admin-web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+# The generated protocol types the page imports.
+COPY packages/contracts/ts /src/packages/contracts/ts
+COPY apps/admin-web ./
+RUN npm run build
 
 # --- build: a virtualenv with one app and its workspace packages -------------------------
 FROM ${PYTHON_IMAGE} AS build
@@ -71,7 +82,9 @@ COPY flows/hvylia-demo.json /app/flows/hvylia-demo.json
 # The knowledge base admin-api ingests on start (ROZ-27) and its tokenizer file.
 COPY kb /app/kb
 COPY --from=build-admin-api /app/tiktoken /app/tiktoken
+COPY --from=build-web /src/apps/admin-web/dist /app/admin-web
 ENV PORT=8000 \
+    ROZMOVA_ADMIN_WEB_DIR=/app/admin-web \
     ROZMOVA_SERVICE_NAME=admin-api \
     ROZMOVA_DEMO_FLOW_PATH=/app/flows/hvylia-demo.json \
     ROZMOVA_KB_PATH=/app/kb \

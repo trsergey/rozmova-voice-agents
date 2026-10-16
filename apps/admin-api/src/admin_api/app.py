@@ -1,10 +1,13 @@
 """FastAPI app of the admin API: health check, auth, access codes, call tickets, bots,
-drafts, publish and rollback so far; version history and call logs come with their tickets."""
+drafts, publish and rollback so far; version history and call logs come with their tickets.
+It also serves the built admin-web: the public demo chat under /demo/ (ROZ-68)."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -49,5 +52,12 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    if settings.admin_web_dir is not None:
+        app.mount("/demo", StaticFiles(directory=settings.admin_web_dir, html=True), name="demo")
+
+        @app.get("/", include_in_schema=False)
+        async def root() -> RedirectResponse:
+            return RedirectResponse("/demo/")
 
     return app

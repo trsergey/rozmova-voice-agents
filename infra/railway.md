@@ -19,6 +19,9 @@ project is set up, so it can be rebuilt by hand or checked against the dashboard
 | `Postgres` | `pgvector/pgvector:0.8.1-pg16`, volume at `/var/lib/postgresql/data` | none |
 | `Redis` | `redis:8.2` (Railway template), volume at `/data` | none |
 
+The public demo page is `https://admin-api-dev-0e9c.up.railway.app/demo/` (the root redirects
+there): an access code from `POST /access-codes`, then a chat with the demo bot (ROZ-68).
+
 PostgreSQL and Redis have no TCP proxy: they are reachable only over the private network.
 The images are public in GHCR (they inherit the repository's visibility), so Railway pulls
 them without registry credentials.

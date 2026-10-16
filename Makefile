@@ -4,7 +4,7 @@ MEMBERS := $(wildcard packages/*) apps/gateway apps/admin-api
 
 COMPOSE := docker compose -f infra/compose.dev.yml
 
-.PHONY: help install lint fmt typecheck test schemas migrate ingest eval eval-fast up up-apps down down-v ps logs
+.PHONY: help install lint fmt typecheck test schemas migrate ingest eval eval-fast up up-apps down down-v ps logs web-install web-dev web-check
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -73,3 +73,16 @@ ps: ## Show local stack status and health
 
 logs: ## Follow local stack logs (make logs s=postgres for one service)
 	$(COMPOSE) logs -f $(s)
+
+WEB := npm --prefix apps/admin-web
+
+web-install: ## Install the admin-web dependencies (Node 22+)
+	$(WEB) ci
+
+web-dev: ## Run the demo page on Vite (http://localhost:5173/demo/), API proxied to localhost:8000
+	$(WEB) run dev
+
+web-check: ## admin-web: eslint, tsc, vitest and the production build
+	$(WEB) run lint
+	$(WEB) test
+	$(WEB) run build

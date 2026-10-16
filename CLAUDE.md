@@ -26,7 +26,7 @@ Sources of truth, read them before designing anything non-trivial:
 ```
 apps/gateway        gateway        FastAPI WebSocket sessions; thin layer around the engine
 apps/admin-api      admin_api      FastAPI: bots, draft, versions, calls, auth, eval jobs
-apps/admin-web                     React + Vite SPA, served by admin-api (from ROZ-41)
+apps/admin-web                     React + Vite SPA, served by admin-api; the demo chat at /demo/ (ROZ-68)
 packages/contracts  rozmova_contracts  Pydantic models: WS protocol, FlowGraph → JSON Schema → TS
 packages/engine     rozmova_engine     flow executor, LLM providers, tools, RAG, eval runner
 packages/core       rozmova_core       settings, db, Redis, logging, telemetry
@@ -45,6 +45,7 @@ make lint       # ruff check, ruff format --check, mypy per workspace member
 make fmt        # ruff --fix + format
 make test       # pytest across the workspace
 make schemas    # export JSON Schema / TS types from contracts
+make web-check  # admin-web: eslint, tsc, vitest, build (after make web-install; Node 22+)
 ```
 
 Use `uv run …` for anything Python; never `pip install`. Add dependencies with
@@ -73,7 +74,7 @@ Use `uv run …` for anything Python; never `pip install`. Add dependencies with
 - Integration tests use testcontainers (PostgreSQL, Redis); mark them `@pytest.mark.integration`.
 - Real models only run in evals (`evals/`) and on the demo.
 - The SDD "paper walkthrough" table for the demo flow is the executor's test suite.
-- `make lint` and `make test` must pass before a commit.
+- `make lint` and `make test` must pass before a commit; `make web-check` too when `apps/admin-web` changed.
 
 ## Workflow
 

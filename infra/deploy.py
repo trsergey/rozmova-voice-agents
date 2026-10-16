@@ -13,10 +13,11 @@ with `railway login` + `railway link` locally.
    environment commit. admin-api's pre-deploy command migrates the database first.
 3. Wait until both new deployments are SUCCESS. Railway keeps the old deployment serving
    until the new one passes its /healthz check, so a broken image never takes traffic.
-4. Smoke test from outside, through Railway's proxy: both /healthz return 200, the
-   gateway WebSocket refuses a call without a ticket with 4401, and a full call works: log
-   in with the access code in `SMOKE_ACCESS_CODE` (a viewer, the least privilege), get a
-   ticket from `POST /calls/ticket`, open the WebSocket, wait for the greeting, hang up.
+4. Smoke test from outside, through Railway's proxy: both /healthz return 200, admin-api
+   serves the demo page at /demo/, the gateway WebSocket refuses a call without a ticket
+   with 4401, and a full call works: log in with the access code in `SMOKE_ACCESS_CODE`
+   (a viewer, the least privilege), get a ticket from `POST /calls/ticket`, open the
+   WebSocket, wait for the greeting, hang up.
    Without `SMOKE_ACCESS_CODE` the full call is skipped with a warning.
 5. On any failure switch back to the previous images, wait for them, and exit 1.
 """
@@ -159,6 +160,12 @@ def healthz(base_url: str) -> None:
             raise DeployError(f"{base_url}/healthz: HTTP {response.status}")
 
 
+def demo_page(admin_url: str) -> None:
+    with urllib.request.urlopen(f"{admin_url}/demo/", timeout=10) as response:  # noqa: S310
+        if response.status != 200 or b'id="root"' not in response.read():
+            raise DeployError(f"{admin_url}/demo/: no demo page (HTTP {response.status})")
+
+
 async def websocket_refuses_without_ticket(gateway_url: str) -> None:
     ws_url = gateway_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
     url = f"{ws_url}/ws/calls/00000000-0000-0000-0000-000000000000"
@@ -231,6 +238,7 @@ def smoke(gateway_url: str, admin_url: str) -> None:
         try:
             healthz(gateway_url)
             healthz(admin_url)
+            demo_page(admin_url)
             asyncio.run(websocket_refuses_without_ticket(gateway_url))
             if access_code:
                 asyncio.run(full_call(admin_url, access_code))
@@ -243,7 +251,10 @@ def smoke(gateway_url: str, admin_url: str) -> None:
             time.sleep(POLL_SECONDS)
         else:
             call = ", full call (greeting, hangup)" if access_code else ""
-            log(f"smoke test passed: /healthz 200, WebSocket without a ticket → 4401{call}")
+            log(
+                "smoke test passed: /healthz 200, /demo/ page, "
+                f"WebSocket without a ticket → 4401{call}"
+            )
             return
 
 

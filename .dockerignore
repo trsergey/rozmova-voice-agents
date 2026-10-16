@@ -9,7 +9,8 @@
 .github
 .env
 .env.*
-node_modules
+**/node_modules
+apps/admin-web/dist
 docs
 evals
 infra
