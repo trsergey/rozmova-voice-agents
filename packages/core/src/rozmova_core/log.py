@@ -28,13 +28,20 @@ _SECRET_KEY = re.compile(
     r"(^|_)(key|secret|password|passwd|token|authorization|cookie)$", re.IGNORECASE
 )
 _URL_CREDENTIALS = re.compile(r"(?P<scheme>[a-z][a-z0-9+.-]*://)[^/@\s]+@", re.IGNORECASE)
+# Secret-looking query parameters in any string, e.g. the WebSocket ticket in the line
+# uvicorn logs for every connection: `/ws/calls/{bot}?call_id=…&ticket=…`.
+_SECRET_QUERY = re.compile(
+    r"(?P<name>[?&](?:[a-z0-9]+_)*(?:ticket|token|key|secret|password|signature)=)[^&#\s\"']*",
+    re.IGNORECASE,
+)
 
 
 def _redact(key: str, value: Any) -> Any:
     if isinstance(value, SecretStr) or (_SECRET_KEY.search(key) and value is not None):
         return REDACTED
     if isinstance(value, str):
-        return _URL_CREDENTIALS.sub(rf"\g<scheme>{REDACTED}@", value)
+        value = _URL_CREDENTIALS.sub(rf"\g<scheme>{REDACTED}@", value)
+        return _SECRET_QUERY.sub(rf"\g<name>{REDACTED}", value)
     if isinstance(value, Mapping):
         return {k: _redact(str(k), v) for k, v in value.items()}
     if isinstance(value, list | tuple):
@@ -43,7 +50,8 @@ def _redact(key: str, value: Any) -> Any:
 
 
 def redact_secrets(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
-    """Mask values under secret-looking keys, ``SecretStr`` values and URL credentials."""
+    """Mask values under secret-looking keys, ``SecretStr`` values, URL credentials and
+    secret-looking query parameters."""
     return {k: _redact(k, v) for k, v in event_dict.items()}
 
 

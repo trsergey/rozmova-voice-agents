@@ -113,6 +113,31 @@ def test_secrets_are_redacted(out: io.StringIO) -> None:
         assert secret not in out.getvalue()
 
 
+def test_secret_query_parameters_are_redacted(out: io.StringIO) -> None:
+    """uvicorn logs every WebSocket with its full URL; the ticket must not reach the log."""
+    logging.getLogger("uvicorn.error").info(
+        '%s - "WebSocket %s" [accepted]',
+        "100.64.0.4:16038",
+        "/ws/calls/b-1?call_id=c-1&ticket=eyJpZCI6IjQw.sig-123",
+    )
+    structlog.get_logger("test").info(
+        "fetched",
+        url="https://api.example/v1?access_token=tok-1&page=2&api_key=k-1#top",
+        note="keep ?monkey=1 and ?tokens=5",
+    )
+
+    uvicorn_line, fetched = _records(out)
+    assert uvicorn_line["event"] == (
+        f'100.64.0.4:16038 - "WebSocket /ws/calls/b-1?call_id=c-1&ticket={REDACTED}" [accepted]'
+    )
+    assert fetched["url"] == (
+        f"https://api.example/v1?access_token={REDACTED}&page=2&api_key={REDACTED}#top"
+    )
+    assert fetched["note"] == "keep ?monkey=1 and ?tokens=5"
+    for secret in ("eyJpZCI6IjQw", "sig-123", "tok-1", "k-1"):
+        assert secret not in out.getvalue()
+
+
 def test_stdlib_loggers_share_the_pipeline(out: io.StringIO) -> None:
     with log_context(call_id="c-9"):
         logging.getLogger("uvicorn.error").warning("token=%s", "x")

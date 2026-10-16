@@ -1,12 +1,15 @@
 """``POST /calls/ticket`` against a migrated PostgreSQL (with the seeded demo bot) and a
 fake Redis: the ticket is the one the gateway accepts."""
 
+import io
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
+import structlog
 from fakeredis import FakeAsyncRedis, FakeServer
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -16,6 +19,7 @@ from admin_api.calls import ws_url
 from admin_api.sessions import COOKIE_NAME, CSRF_HEADER, Role, SessionStore
 from rozmova_core import tickets
 from rozmova_core.db import create_engine, create_session_factory
+from rozmova_core.log import configure_logging
 from rozmova_core.models import Bot
 from rozmova_core.settings import Settings
 
@@ -100,6 +104,25 @@ async def test_ws_url_is_ready_to_open(api: AdminApi) -> None:
     url = urlsplit(out["ws_url"])
     assert (url.scheme, url.netloc, url.path) == ("wss", "gateway.example", f"/ws/calls/{BOT_ID}")
     assert parse_qs(url.query) == {"call_id": [out["call_id"]], "ticket": [out["ticket"]]}
+
+
+async def test_issuing_a_ticket_does_not_log_it(api: AdminApi, settings: Settings) -> None:
+    """ROZ-78: the ticket and the ``ws_url`` that carries it stay out of the logs; the record
+    names the call. (uvicorn's access line for ``POST /calls/ticket`` has no query.)"""
+    out = io.StringIO()
+    configure_logging(settings.model_copy(update={"log_level": "DEBUG"}), stream=out)
+    try:
+        csrf = await api.login_as("viewer", access_code_id="c1")
+        issued = api.ticket(csrf)
+    finally:
+        structlog.reset_defaults()
+        logging.getLogger().handlers.clear()
+
+    output = out.getvalue()
+    assert f'"call_id": "{issued["call_id"]}"' in output
+    assert issued["ticket"] not in output
+    assert all(part not in output for part in issued["ticket"].split("."))
+    assert issued["ws_url"] not in output
 
 
 def test_ws_url_scheme_follows_the_gateway_url() -> None:

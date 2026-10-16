@@ -461,6 +461,62 @@ async def test_sigterm_drains_calls_and_exits_0(redis_url: str) -> None:
         await redis.aclose()
 
 
+@pytest.mark.integration
+async def test_logs_of_a_call_never_show_the_ticket(redis_url: str, tmp_path: Path) -> None:
+    """uvicorn logs every WebSocket with its URL (ROZ-78): the line keeps the path and
+    ``call_id``, the ticket is masked. A real process, since TestClient has no uvicorn."""
+    port = free_port()
+    env = os.environ | {
+        "ROZMOVA_TICKET_SECRET": SECRET,
+        "ROZMOVA_REDIS_URL": redis_url,
+        "ROZMOVA_LOG_JSON": "true",
+    }
+    launcher = Path(__file__).with_name("slow_llm_gateway.py")
+    log_path = tmp_path / "gateway.log"
+    redis = create_redis(Settings(redis_url=SecretStr(redis_url)))
+    with log_path.open("w") as log_file:
+        proc = subprocess.Popen(  # noqa: ASYNC220, S603 - the test's own launcher
+            [sys.executable, str(launcher), str(port)], env=env, stdout=log_file
+        )
+        try:
+            async with asyncio.timeout(20):  # until the server listens
+                while True:
+                    with contextlib.suppress(OSError):
+                        _, writer = await asyncio.open_connection("127.0.0.1", port)
+                        writer.close()
+                        break
+                    await asyncio.sleep(0.1)
+
+            bot_id, call_id = uuid4(), uuid4()
+            token = await tickets.issue(
+                redis, SECRET, user_id="viewer-1", bot_id=bot_id, call_id=call_id
+            )
+            async with websockets.connect(
+                f"ws://127.0.0.1:{port}{url(bot_id, call_id, token)}"
+            ) as ws:
+                while json.loads(await ws.recv())["type"] != "turn_end":  # the greeting
+                    pass
+                await ws.send(json.dumps({"type": "hangup"}))
+                while json.loads(await ws.recv())["type"] != "session_end":
+                    pass
+
+            proc.send_signal(signal.SIGTERM)
+            assert await asyncio.to_thread(proc.wait, 15) == 0
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            await redis.aclose()
+
+    output = log_path.read_text(encoding="utf-8")
+    websocket_lines = [line for line in output.splitlines() if "WebSocket /ws/calls/" in line]
+    assert websocket_lines, output
+    assert f"call_id={call_id}" in websocket_lines[0]
+    assert "ticket=***" in websocket_lines[0]
+    assert token not in output
+    # A ticket is `<payload>.<signature>`; neither half may leak on its own.
+    assert all(part not in output for part in token.split("."))
+
+
 # --- demo limits ------------------------------------------------------------------------
 
 
