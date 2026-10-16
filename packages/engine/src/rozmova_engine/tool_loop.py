@@ -20,6 +20,7 @@ Limits:
 """
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import aclosing
@@ -212,16 +213,26 @@ class ToolLoop:
         """Run the calls in order and record a result for every one, even on cancel."""
         interrupted = False
         for call in calls:
+            finished_on_cancel = False
             if interrupted:
                 result = tool_error("cancelled", "The subscriber interrupted; not run.")
             else:
                 try:
                     result, interrupted = await self._run_tool(call, state, timer)
+                    finished_on_cancel = interrupted
                 except asyncio.CancelledError:
                     result = tool_error("cancelled", "The subscriber interrupted; not run.")
                     interrupted = True
             content = json.dumps(result, ensure_ascii=False)
             self._remember(state, Message(role="tool", content=content, tool_call_id=call.id))
+            if finished_on_cancel:
+                # The side effect happened: the call log must show it. The result is already
+                # in the history, so a second cancellation here loses nothing; it is raised
+                # below with the first one.
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._emit(
+                        protocol.ToolResult(turn_id=state.turn, name=call.name, result=result)
+                    )
         if interrupted:
             raise asyncio.CancelledError
 
@@ -246,7 +257,8 @@ class ToolLoop:
                 else:
                     result = await work
         if interrupted:
-            # No more awaits: a second cancellation must not lose the recorded result.
+            # No await before the caller records the result: a second cancellation must not
+            # lose it. The caller emits the ``tool_result`` after recording.
             return result, True
         await self._emit(protocol.ToolResult(turn_id=state.turn, name=call.name, result=result))
         if result.get("error") in _FAILED:

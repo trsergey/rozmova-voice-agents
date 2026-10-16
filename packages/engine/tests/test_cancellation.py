@@ -131,6 +131,9 @@ async def test_side_effect_tool_finishes_and_its_result_is_recorded() -> None:
 
     assert activated == ["roaming_eu"]
     assert h.tool_results() == [{"status": "activated"}]
+    # The side effect reaches the client (debug) and the call log, although cancelled.
+    results = [e for e in h.events if isinstance(e, protocol.ToolResult)]
+    assert [(e.name, e.result) for e in results] == [("activate", {"status": "activated"})]
 
 
 async def test_calls_that_did_not_run_get_a_cancelled_result() -> None:

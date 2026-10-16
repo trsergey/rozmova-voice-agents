@@ -267,9 +267,9 @@ The last message of a session; the server closes the connection after it.
 | `code` | Meaning |
 | --- | --- |
 | `invalid_message` | The client frame is not valid JSON or does not match the client message schema. |
-| `turn_timeout` | A bounded wait expired: the whole turn (30 s), the first LLM token (10 s) or a tool call (5 s). |
-| `llm_unavailable` | The LLM provider failed or is unreachable after retries. |
-| `tool_failed` | A tool raised an error. |
+| `turn_timeout` | The whole turn took longer than 30 s; the turn is dropped, the call goes on. |
+| `llm_unavailable` | The LLM provider failed or is unreachable after retries, or sent no first token within 10 s. |
+| `tool_failed` | A tool raised an error or did not answer within 5 s; the assistant is told and answers anyway. |
 | `kb_unavailable` | The knowledge-base search failed or timed out; the `kb_answer` node said its not-found reply. |
 | `rate_limited` | The per-user message limit of the demo was exceeded (20 messages per minute). The utterance is dropped, the call goes on; `retryable` is `true`. |
 | `internal` | Any other server error; details are in the server logs under the `call_id`. |

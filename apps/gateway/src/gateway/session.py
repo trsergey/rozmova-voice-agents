@@ -134,8 +134,24 @@ class Session:
         return self.state.call_id
 
     async def run(self) -> None:
-        closing = SessionClosing(code=INTERNAL_ERROR)
         time_is_up = self._schedule_time_limit()
+        try:
+            closing = await self._run_tasks()
+        except asyncio.CancelledError:
+            # The task itself was cancelled (a hard server stop): no close to send, but the
+            # call log still shows that the connection ended. Recording does not await.
+            if self._recorder is not None:
+                self._recorder.closed(None, resumable=True)
+            log.info("session_cancelled")
+            raise
+        finally:
+            if time_is_up is not None:
+                time_is_up.cancel()
+        await self._finish(closing)
+
+    async def _run_tasks(self) -> SessionClosing:
+        """Run reader, turn loop and writer until one ends the session; how to close."""
+        closing = SessionClosing(code=INTERNAL_ERROR)
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self._reader(), name="reader")
@@ -149,10 +165,7 @@ class Session:
             await self._send_quietly(
                 protocol.Error(code="internal", message="The session failed unexpectedly.")
             )
-        finally:
-            if time_is_up is not None:
-                time_is_up.cancel()
-        await self._finish(closing)
+        return closing
 
     def drain(self, deadline: float) -> None:
         """End the call for a shutdown once the running turn is done or ``deadline`` passes.

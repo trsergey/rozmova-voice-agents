@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from fakeredis import FakeAsyncRedis
+from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 
 from gateway.call_events import CallEventWriter, CallRecorder
@@ -27,8 +28,10 @@ from rozmova_engine.tool_loop import ROUTE_TOOL, ToolLoop
 from rozmova_engine.tools import (
     DEMO_SUBSCRIBER_ID,
     MockBilling,
+    Tool,
     ToolContext,
     ToolRegistry,
+    ToolResult,
     demo_subscribers,
     subscriber_tools,
 )
@@ -102,12 +105,18 @@ class Call:
         resume: tuple[SessionStore, SessionState] | None = None,
         limits: CallLimits | None = None,
         events: CallEventWriter | None = None,
+        tools: list[Tool[Any]] | None = None,
+        tool_timeout: float = 5.0,
+        first_token_timeout: float = 10.0,
     ) -> None:
         """``redis`` persists the state; ``resume`` is a claimed store and its state;
         ``events`` records the call."""
         self.transport = FakeTransport()
         self.provider = provider = FakeProvider(llm_calls)
-        registry = ToolRegistry(subscriber_tools(MockBilling(demo_subscribers())))
+        registry = ToolRegistry(
+            tools if tools is not None else subscriber_tools(MockBilling(demo_subscribers())),
+            timeout=tool_timeout,
+        )
         ctx = ToolContext(subscriber_id=DEMO_SUBSCRIBER_ID)
         self.resumed = resume is not None
         store: SessionStore | None
@@ -116,7 +125,14 @@ class Call:
         else:
             state = SessionState(call_id=uuid4(), bot_id=uuid4(), bot_version=1)
             store = SessionStore(redis, state.call_id) if redis is not None else None
-        loop = ToolLoop(provider, "gpt-4.1-mini", registry, ctx, self.emit)
+        loop = ToolLoop(
+            provider,
+            "gpt-4.1-mini",
+            registry,
+            ctx,
+            self.emit,
+            first_token_timeout=first_token_timeout,
+        )
         executor = FlowExecutor(flow, loop, registry, ctx, self.emit)
         self.session = Session(
             self.transport,
@@ -338,6 +354,93 @@ async def test_new_utterance_cancels_the_running_turn() -> None:
     # The next LLM call saw the cut-off reply with the marker.
     seen = call.provider.calls[-1].messages
     assert any(m.content.endswith(INTERRUPTED_MARK) for m in seen)
+
+
+class NoArgs(BaseModel):
+    pass
+
+
+ONE_TOOL_FLOW = FlowGraph.model_validate(
+    {
+        "nodes": [
+            {"id": "start", "type": "start", "data": {"greeting": "Вітаю!"}},
+            {
+                "id": "ask",
+                "type": "llm_prompt",
+                "data": {"prompt": "Допомагай.", "tools": ["work"]},
+            },
+        ],
+        "edges": [{"source": "start", "target": "ask"}],
+    }
+)
+
+
+async def test_barge_in_during_a_side_effect_lets_it_finish_first() -> None:
+    """FR-4 with ``shield``: the side effect is not cut in half by a new utterance; the turn
+    is cancelled only after it, and the result stays in the history and the call log."""
+    done: list[str] = []
+
+    async def activate(_: NoArgs, __: ToolContext) -> ToolResult:
+        await asyncio.sleep(0.2)
+        done.append("activated")
+        return {"status": "activated"}
+
+    events = Recorded()
+    llm: list[list[Step]] = [[ToolCall(id="a1", name="work")], text_turn("Слухаю.")]
+    tools = [Tool("work", "", NoArgs, activate, side_effect=True)]
+    async with Call(*llm, flow=ONE_TOOL_FLOW, tools=tools, events=events) as call:
+        call.transport.send({"type": "user_text", "text": "підключи"})
+        await asyncio.sleep(0.05)  # the tool is running
+        call.transport.send({"type": "user_text", "text": "а ні, стоп"})
+        await call.transport.until("turn_cancelled")
+        assert done == ["activated"]  # finished before the cancellation completed
+        sent = await call.transport.until("turn_end", 2)
+
+    after = [e["type"] for e in sent[3:]]
+    assert after[0] == "turn_cancelled"
+    assert after[-1] == "turn_end"
+    tool_results = [
+        json.loads(e.message.content)
+        for e in call.session.state.history
+        if e.message.role == "tool"
+    ]
+    assert tool_results == [{"status": "activated"}]
+    recorded = [(e.type, e.payload) for e in events.events]
+    assert (
+        "tool_result",
+        {"turn_id": 2, "name": "work", "result": {"status": "activated"}},
+    ) in recorded
+
+
+async def test_no_first_token_in_time_is_a_retryable_error_and_the_call_goes_on() -> None:
+    llm: list[list[Step]] = [[Delay(1), TextDelta(text="пізно")], text_turn("Тепер так.")]
+    async with Call(*llm, first_token_timeout=0.05) as call:
+        call.transport.send({"type": "user_text", "text": "баланс"})
+        await call.transport.until("error")
+        call.transport.send({"type": "user_text", "text": "баланс ще раз"})
+        sent = await call.transport.until("turn_end", 2)
+
+    errors = [e for e in sent if e["type"] == "error"]
+    assert [(e["code"], e["retryable"]) for e in errors] == [("llm_unavailable", True)]
+    reply = "".join(e["text"] for e in sent if e["type"] == "assistant_delta" and e["turn_id"] == 3)
+    assert reply == "Тепер так."
+
+
+async def test_a_tool_that_does_not_answer_in_time_is_a_typed_error_and_the_turn_ends() -> None:
+    async def hangs(_: NoArgs, __: ToolContext) -> ToolResult:
+        await asyncio.sleep(10)
+        return {}
+
+    llm: list[list[Step]] = [[ToolCall(id="h1", name="work")], text_turn("Не вдалося.")]
+    tools = [Tool("work", "", NoArgs, hangs)]
+    async with Call(*llm, flow=ONE_TOOL_FLOW, tools=tools, tool_timeout=0.05) as call:
+        call.transport.send({"type": "user_text", "text": "перевір"})
+        sent = await call.transport.until("turn_end", 2)
+
+    turn = [e["type"] for e in sent[3:]]
+    assert (turn[0], turn[-1]) == ("error", "turn_end")
+    assert set(turn[1:-1]) == {"assistant_delta"}  # the LLM answers after the error
+    assert (sent[3]["code"], sent[3]["retryable"]) == ("tool_failed", True)
 
 
 async def test_hangup_during_a_turn_closes_without_hanging() -> None:
@@ -694,3 +797,21 @@ async def test_a_dropped_connection_is_recorded_as_resumable() -> None:
 
     assert events.events[-1].type == "session_closed"
     assert events.events[-1].payload == {"code": None, "resumable": True}
+
+
+async def test_a_cancelled_session_is_recorded_as_closed_and_stays_cancelled() -> None:
+    """A hard stop cancels the session task: nothing is sent, the call log still shows the
+    end, and the cancellation is not swallowed."""
+    events = Recorded()
+    call = Call(events=events)
+    task = asyncio.create_task(call.session.run())
+    await call.transport.until("turn_end")  # the greeting
+
+    task.cancel()
+    await asyncio.wait([task])
+
+    assert task.cancelled()
+    assert (events.events[-1].type, events.events[-1].payload) == (
+        "session_closed",
+        {"code": None, "resumable": True},
+    )
