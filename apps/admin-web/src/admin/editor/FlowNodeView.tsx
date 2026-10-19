@@ -24,6 +24,7 @@ export function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
       className={`w-56 rounded-lg border border-t-4 bg-surface text-fg shadow-sm ${kind.accent} ${frame}`}
       title={issues.map((issue) => ISSUE_TEXT[issue.code] ?? issue.message).join("\n") || undefined}
       data-testid={`node-${node.id}`}
+      aria-current={active ? "step" : undefined}
     >
       {hasInlet(node) && <Handle type="target" position={Position.Top} className="!size-2.5 !bg-fg-muted" />}
       <div className="px-3 py-2">

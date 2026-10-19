@@ -1,5 +1,6 @@
-// The flow editor (FR-10): the bot's draft on a canvas. Admins add nodes from the palette,
-// connect outlets, move and delete, undo and redo, and save; every load and save runs the
+// The flow editor (FR-10, FR-11): the bot's draft on a canvas. Admins add nodes from the
+// palette, connect outlets, move and delete, undo and redo, save, and try the saved draft in
+// the test console, which highlights the active node; every load and save runs the
 // validator, whose errors frame their nodes. Viewers see the same canvas read-only.
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertDialog } from "radix-ui";
@@ -7,6 +8,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useParams } from "react-router";
 
 import { client, csrf, unwrap } from "../../api/client";
+import { useCall } from "../../call/useCall";
 import { useBot } from "../bots/queries";
 import { formatTime } from "../format";
 import { useCanEdit, useCurrentSession } from "../session";
@@ -16,6 +18,7 @@ import { ISSUE_TEXT, LAYOUT, NODE_KINDS, PALETTE, toFlowGraph, type FlowIssue, t
 // The forms bring zod and React Hook Form; they load when a node is first selected.
 const NodeForm = lazy(() => import("./NodeForm").then((m) => ({ default: m.NodeForm })));
 import { selectDirty, useEditor } from "./store";
+import { TestConsole } from "./TestConsole";
 
 export function EditorPage() {
   const { botId = "" } = useParams();
@@ -30,6 +33,9 @@ export function EditorPage() {
   const dirty = useEditor(selectDirty);
   const [warnings, setWarnings] = useState<FlowIssue[]>([]);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  // The test console's call: a debug call on the saved draft (admins only).
+  const call = useCall(csrf_token, botId, { debug: true });
 
   const validate = useMutation({
     mutationFn: () =>
@@ -95,14 +101,27 @@ export function EditorPage() {
         saving={save.isPending}
         savedAt={savedAt}
         onSave={() => save.mutate()}
+        consoleOpen={consoleOpen}
+        onToggleConsole={() => {
+          if (consoleOpen) call.hangup();
+          setConsoleOpen(!consoleOpen);
+        }}
       />
       {save.isError && <ErrorText>Не вдалося зберегти чернетку.</ErrorText>}
       <div className="flex min-h-0 flex-1 gap-3">
         {canEdit && <Palette />}
         <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-line bg-surface" aria-label="Холст флоу">
-          <Canvas editable={canEdit} />
+          <Canvas editable={canEdit} activeNodeId={consoleOpen ? call.state.activeNodeId : null} />
         </div>
-        <SidePanel editable={canEdit} warnings={warnings} checking={validate.isPending} />
+        {consoleOpen ? (
+          <TestConsole
+            call={call}
+            dirty={dirty}
+            onSaveAndStart={() => save.mutate(undefined, { onSuccess: () => call.start() })}
+          />
+        ) : (
+          <SidePanel editable={canEdit} warnings={warnings} checking={validate.isPending} />
+        )}
       </div>
       <LeaveDialog
         open={blocker.state === "blocked"}
@@ -121,6 +140,8 @@ function Toolbar(props: {
   saving: boolean;
   savedAt: string | null;
   onSave: () => void;
+  consoleOpen: boolean;
+  onToggleConsole: () => void;
 }) {
   const canUndo = useEditor((state) => state.past.length > 0);
   const canRedo = useEditor((state) => state.future.length > 0);
@@ -141,6 +162,9 @@ function Toolbar(props: {
       </span>
       {props.canEdit && (
         <div className="ml-auto flex gap-2">
+          <Button variant={props.consoleOpen ? "primary" : "secondary"} onClick={props.onToggleConsole} aria-pressed={props.consoleOpen}>
+            {props.consoleOpen ? "Сховати тест" : "Тестувати"}
+          </Button>
           <Button variant="secondary" onClick={undo} disabled={!canUndo} title="Ctrl/⌘+Z">
             Скасувати
           </Button>

@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Bot } from "./api";
-import type { BotLine } from "./callState";
-import { useCall } from "./useCall";
+import type { BotLine } from "../call/callState";
+import { useCall } from "../call/useCall";
 
 interface Props {
   csrf: string;
@@ -54,9 +54,9 @@ export function Chat({ csrf, bot, onLogout }: Props) {
             <p key={index} className="line user">
               {line.text}
             </p>
-          ) : (
+          ) : line.role === "assistant" ? (
             <BotReply key={index} line={line} />
-          ),
+          ) : null, // tool lines come with debug calls only, never to the demo
         )}
         {(state.phase === "connecting" || state.phase === "reconnecting") && (
           <p className="muted">{state.phase === "connecting" ? "Підключення…" : "Відновлюємо з'єднання…"}</p>

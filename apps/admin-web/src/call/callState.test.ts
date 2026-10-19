@@ -90,8 +90,25 @@ test("errors are shown in Ukrainian and cleared by the next utterance", () => {
   expect(unknown.error).toMatch(/Щось пішло не так/);
 });
 
-test("debug events change nothing", () => {
-  const before = run(started);
-  const after = callReducer(before, server({ type: "node_enter", node_id: "assist" }));
-  expect(after).toBe(before);
+test("node_enter marks the active node for the editor's canvas", () => {
+  const state = run(started, server({ type: "node_enter", node_id: "start" }), server({ type: "node_enter", node_id: "assist" }));
+
+  expect(state.activeNodeId).toBe("assist");
+  expect(state.lines).toEqual([]);
+});
+
+test("tool calls become tool lines that receive their results in order", () => {
+  const state = run(
+    started,
+    server({ type: "tool_call", turn_id: 1, name: "get_balance", args: { msisdn: "380" } }),
+    server({ type: "tool_call", turn_id: 1, name: "get_balance", args: { msisdn: "381" } }),
+    server({ type: "tool_result", turn_id: 1, name: "get_balance", result: { balance: 10 } }),
+    server({ type: "tool_result", turn_id: 1, name: "get_balance", result: { balance: 20 } }),
+    server({ type: "tool_result", turn_id: 2, name: "get_balance", result: "unmatched" }),
+  );
+
+  expect(state.lines).toEqual([
+    { role: "tool", turnId: 1, name: "get_balance", args: { msisdn: "380" }, result: { balance: 10 } },
+    { role: "tool", turnId: 1, name: "get_balance", args: { msisdn: "381" }, result: { balance: 20 } },
+  ]);
 });

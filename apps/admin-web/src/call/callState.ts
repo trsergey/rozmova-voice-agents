@@ -1,5 +1,7 @@
-// What the chat shows, as a pure function of the server events (docs/protocol.md). The
+// What a chat shows, as a pure function of the server events (docs/protocol.md). The
 // WebSocket handling lives in useCall; this file has no I/O so the tests drive it directly.
+// The demo and the editor's test console share it; only debug calls (the console) receive
+// tool calls and node_enter, which become tool lines and the active node.
 import type { ServerMessage, Source } from "../../../../packages/contracts/ts/protocol.server";
 
 export type Phase = "idle" | "connecting" | "live" | "reconnecting" | "ended";
@@ -19,7 +21,16 @@ export interface BotLine {
   done: boolean;
 }
 
-export type Line = UserLine | BotLine;
+export interface ToolLine {
+  role: "tool";
+  turnId: number;
+  name: string;
+  args: Record<string, unknown>;
+  // undefined until tool_result arrives
+  result?: unknown;
+}
+
+export type Line = UserLine | BotLine | ToolLine;
 
 export interface CallState {
   phase: Phase;
@@ -29,6 +40,8 @@ export interface CallState {
   error: string | null;
   // Why the call ended, shown under the conversation.
   ended: string | null;
+  // The flow node the call is in (debug calls only), for the editor's canvas.
+  activeNodeId: string | null;
 }
 
 export type CallAction =
@@ -38,7 +51,14 @@ export type CallAction =
   | { type: "reconnecting" }
   | { type: "failed"; message: string };
 
-export const initialCallState: CallState = { phase: "idle", callId: null, lines: [], error: null, ended: null };
+export const initialCallState: CallState = {
+  phase: "idle",
+  callId: null,
+  lines: [],
+  error: null,
+  ended: null,
+  activeNodeId: null,
+};
 
 const END_REASONS: Record<string, string> = {
   hangup: "Розмову завершено.",
@@ -107,8 +127,29 @@ function onServer(state: CallState, message: ServerMessage): CallState {
       // A gateway restart: useCall reconnects with the same call_id.
       if (message.reason === "shutdown") return { ...state, phase: "reconnecting" };
       return { ...state, phase: "ended", ended: state.ended ?? END_REASONS[message.reason] ?? END_REASONS.hangup ?? null };
+    case "node_enter":
+      return { ...state, activeNodeId: message.node_id };
+    case "tool_call":
+      return {
+        ...state,
+        lines: [
+          ...state.lines,
+          { role: "tool", turnId: message.turn_id, name: message.name, args: message.args as Record<string, unknown> },
+        ],
+      };
+    case "tool_result": {
+      // Results come in the order of the calls: the earliest call of this tool in this turn
+      // still waiting for one gets it.
+      const index = state.lines.findIndex(
+        (line) => line.role === "tool" && line.turnId === message.turn_id && line.name === message.name && line.result === undefined,
+      );
+      if (index === -1) return state;
+      return {
+        ...state,
+        lines: state.lines.map((line, i) => (i === index ? { ...(line as ToolLine), result: message.result } : line)),
+      };
+    }
     default:
-      // Debug events (tool_call, tool_result, node_enter) are not sent to viewers; ignore them.
       return state;
   }
 }
