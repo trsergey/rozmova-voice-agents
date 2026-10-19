@@ -12,7 +12,9 @@ export interface ChunkInfo {
   size: number; // bytes
 }
 
-export const BUDGET_BYTES = { entry: 400_000, chunk: 100_000 };
+// The flow editor carries React Flow (~150 kB), so it gets its own, larger budget.
+export const BUDGET_BYTES = { entry: 400_000, chunk: 100_000, editor: 250_000 };
+const EDITOR = /\/src\/admin\/editor\/EditorPage\.tsx$/;
 // The admin code every route needs: the session and its guards.
 const SHARED_ADMIN = /\/src\/admin\/(guards|session)\.tsx?$/;
 const ADMIN = /\/src\/admin\//;
@@ -63,7 +65,11 @@ export function checkBundle(chunks: ChunkInfo[]): string[] {
     if (leaked.length > 0) problems.push(`${name} loads admin-only code: ${leaked.join(", ")}`);
   }
   for (const chunk of chunks) {
-    const budget = chunk.isEntry ? BUDGET_BYTES.entry : BUDGET_BYTES.chunk;
+    const budget = chunk.isEntry
+      ? BUDGET_BYTES.entry
+      : EDITOR.test(chunk.facadeModuleId ?? "")
+        ? BUDGET_BYTES.editor
+        : BUDGET_BYTES.chunk;
     if (chunk.size > budget) problems.push(`${chunk.fileName} is ${chunk.size} bytes, over its ${budget}`);
   }
   return problems;

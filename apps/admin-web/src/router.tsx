@@ -36,6 +36,10 @@ export const routes: RouteObject[] = [
               { index: true, element: <Navigate to="bots" replace /> },
               { path: "bots", lazy: page(() => import("./admin/bots/BotsPage"), (m) => m.BotsPage) },
               { path: "bots/:botId", lazy: page(() => import("./admin/bots/BotPage"), (m) => m.BotPage) },
+              {
+                path: "bots/:botId/editor",
+                lazy: page(() => import("./admin/editor/EditorPage"), (m) => m.EditorPage),
+              },
               { path: "calls", lazy: page(() => import("./admin/calls/CallsPage"), (m) => m.CallsPage) },
               { path: "calls/:callId", lazy: page(() => import("./admin/calls/CallPage"), (m) => m.CallPage) },
               { path: "kb", lazy: page(() => import("./admin/kb/KbPage"), (m) => m.KbPage) },

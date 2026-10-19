@@ -27,8 +27,14 @@ export function BotPage() {
     <>
       <BackLink />
       <PageHeader title={bot.data.name}>
-        <span className="text-sm text-fg-muted">
+        <span className="flex flex-wrap items-center gap-3 text-sm text-fg-muted">
           {bot.data.provider} · {bot.data.model}
+          <Link
+            to="editor"
+            className="rounded-md bg-accent px-3 py-2 font-medium text-accent-fg hover:bg-accent/90"
+          >
+            Редактор флоу
+          </Link>
         </span>
       </PageHeader>
       <div className="grid gap-4 md:grid-cols-3">

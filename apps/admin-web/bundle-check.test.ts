@@ -62,3 +62,13 @@ test("chunks over budget fail", () => {
     expect.stringMatching(/^DemoPage\.js is \d+ bytes/),
   ]);
 });
+
+test("the flow editor has its own budget", () => {
+  const editor = (size: number) =>
+    chunk("EditorPage.js", { facadeModuleId: "/app/src/admin/editor/EditorPage.tsx", imports: ["index.js"], size });
+
+  expect(checkBundle([entry(), demo(), editor(BUDGET_BYTES.editor)])).toEqual([]);
+  expect(checkBundle([entry(), demo(), editor(BUDGET_BYTES.editor + 1)])).toEqual([
+    expect.stringMatching(/^EditorPage\.js is \d+ bytes/),
+  ]);
+});
