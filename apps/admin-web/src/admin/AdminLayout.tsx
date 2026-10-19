@@ -8,6 +8,7 @@ const NAV = [
   { to: "/admin/bots", label: "Боти" },
   { to: "/admin/calls", label: "Дзвінки" },
   { to: "/admin/kb", label: "База знань" },
+  { to: "/admin/ops", label: "Операції" },
   { to: "/admin/access-codes", label: "Коди доступу", adminOnly: true },
 ];
 

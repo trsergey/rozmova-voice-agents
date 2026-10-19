@@ -7,9 +7,12 @@ import { BotPage } from "./admin/bots/BotPage";
 import { BotsPage } from "./admin/bots/BotsPage";
 import { CallPage } from "./admin/calls/CallPage";
 import { CallsPage } from "./admin/calls/CallsPage";
+import { AccessCodesPage } from "./admin/codes/AccessCodesPage";
 import { RequireAdmin, RequireSession } from "./admin/guards";
+import { KbPage } from "./admin/kb/KbPage";
 import { LoginPage } from "./admin/LoginPage";
-import { NotFound, Placeholder } from "./admin/Placeholder";
+import { OpsPage } from "./admin/ops/OpsPage";
+import { NotFound } from "./admin/NotFound";
 import { DemoPage } from "./demo/DemoPage";
 
 export const routes: RouteObject[] = [
@@ -27,10 +30,11 @@ export const routes: RouteObject[] = [
           { path: "bots/:botId", element: <BotPage /> },
           { path: "calls", element: <CallsPage /> },
           { path: "calls/:callId", element: <CallPage /> },
-          { path: "kb", element: <Placeholder title="База знань" ticket="ROZ-76" /> },
+          { path: "kb", element: <KbPage /> },
+          { path: "ops", element: <OpsPage /> },
           {
             element: <RequireAdmin />,
-            children: [{ path: "access-codes", element: <Placeholder title="Коди доступу" ticket="ROZ-76" /> }],
+            children: [{ path: "access-codes", element: <AccessCodesPage /> }],
           },
           { path: "*", element: <NotFound /> },
         ],

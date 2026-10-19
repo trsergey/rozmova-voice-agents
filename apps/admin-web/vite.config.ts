@@ -11,7 +11,7 @@ export default defineConfig({
   base: "/",
   plugins: [react(), tailwindcss()],
   server: {
-    proxy: { "/auth": api, "/bots": api, "/calls": { target: api, ws: true }, "/kb": api, "/providers": api },
+    proxy: { "/auth": api, "/bots": api, "/calls": { target: api, ws: true }, "/kb": api, "/providers": api, "/ops": api, "/access-codes": api },
   },
   test: {
     environment: "jsdom",
