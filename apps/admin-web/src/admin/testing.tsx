@@ -13,14 +13,15 @@ type Reply = { status: number; body?: unknown };
 export type Route = (body: unknown) => Reply;
 
 export function fakeApi(routes: Record<string, Route>) {
-  const calls: { key: string; body: unknown; csrf: string | null }[] = [];
+  const calls: { key: string; body: unknown; csrf: string | null; query: URLSearchParams }[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
-      const key = `${request.method} ${new URL(request.url).pathname}`;
+      const url = new URL(request.url);
+      const key = `${request.method} ${url.pathname}`;
       const text = await request.text();
       const body = text ? JSON.parse(text) : undefined;
-      calls.push({ key, body, csrf: request.headers.get("X-CSRF-Token") });
+      calls.push({ key, body, csrf: request.headers.get("X-CSRF-Token"), query: url.searchParams });
       const route = routes[key];
       const { status, body: out } = route ? route(body) : { status: 404, body: { error: { code: "not_found", message: "x" } } };
       return new Response(out === undefined ? null : JSON.stringify(out), { status });
