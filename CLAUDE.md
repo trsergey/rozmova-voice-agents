@@ -45,6 +45,7 @@ make lint       # ruff check, ruff format --check, mypy per workspace member
 make fmt        # ruff --fix + format
 make test       # pytest across the workspace
 make schemas    # export JSON Schema / TS types from contracts
+make client     # export admin-api OpenAPI, generate the admin-web TS client types
 make web-check  # admin-web: eslint, tsc, vitest, build (after make web-install; Node 22+)
 ```
 

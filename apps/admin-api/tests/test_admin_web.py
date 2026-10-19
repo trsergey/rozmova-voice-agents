@@ -1,5 +1,6 @@
-"""admin-api serves the built admin-web under /demo/ when ``admin_web_dir`` is set (ROZ-68).
-No lifespan runs here (``TestClient`` without ``with``), so no database is needed."""
+"""admin-api serves the built admin-web when ``admin_web_dir`` is set: pages under /admin/
+and /demo/ with a history fallback, the bundle under /assets/. No lifespan runs here
+(``TestClient`` without ``with``), so no database is needed."""
 
 from pathlib import Path
 
@@ -22,17 +23,35 @@ def built_page(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_demo_page_and_assets_are_served(tmp_path: Path) -> None:
+def test_pages_and_assets_are_served(tmp_path: Path) -> None:
     http = client(Settings(env="test", admin_web_dir=built_page(tmp_path)))
 
     page = http.get("/demo/")
     assert page.status_code == 200
     assert page.headers["content-type"].startswith("text/html")
+    assert page.headers["cache-control"] == "no-cache"
     assert 'id="root"' in page.text
 
-    asset = http.get("/demo/assets/index-abc.js")
+    asset = http.get("/assets/index-abc.js")
     assert asset.status_code == 200
-    assert http.get("/demo/assets/missing.js").status_code == 404
+    assert http.get("/assets/missing.js").status_code == 404
+
+
+def test_client_routes_fall_back_to_the_page(tmp_path: Path) -> None:
+    http = client(Settings(env="test", admin_web_dir=built_page(tmp_path)))
+
+    for path in ("/admin", "/admin/", "/admin/bots/42", "/demo", "/demo/call/1"):
+        response = http.get(path)
+        assert response.status_code == 200, path
+        assert 'id="root"' in response.text, path
+
+
+def test_api_paths_are_not_swallowed_by_the_page(tmp_path: Path) -> None:
+    http = client(Settings(env="test", admin_web_dir=built_page(tmp_path)))
+
+    response = http.get("/bots")
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "not_authenticated"
 
 
 def test_root_redirects_to_the_demo_page(tmp_path: Path) -> None:
@@ -53,4 +72,5 @@ def test_no_page_without_admin_web_dir() -> None:
     http = client(Settings(env="test"))
 
     assert http.get("/demo/").status_code == 404
+    assert http.get("/admin/bots").status_code == 404
     assert http.get("/").status_code == 404

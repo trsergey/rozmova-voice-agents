@@ -4,7 +4,7 @@ MEMBERS := $(wildcard packages/*) apps/gateway apps/admin-api
 
 COMPOSE := docker compose -f infra/compose.dev.yml
 
-.PHONY: help install lint fmt typecheck test schemas migrate ingest eval eval-fast up up-apps down down-v ps logs web-install web-dev web-check
+.PHONY: help install lint fmt typecheck test schemas client migrate ingest eval eval-fast up up-apps down down-v ps logs web-install web-dev web-check
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -39,6 +39,12 @@ schemas: ## Export JSON Schema and TS types from contracts
 		$(JSON2TS) --input $$f --output $$out --additionalProperties false; \
 		echo "wrote $$out"; \
 	done
+
+OPENAPI_TS := npx --yes openapi-typescript@7.13.0
+
+client: ## Export the admin API's OpenAPI schema and generate the admin-web TS client types
+	uv run python -m admin_api.openapi
+	$(OPENAPI_TS) apps/admin-api/openapi.json --output apps/admin-web/src/api-schema.d.ts
 
 ALEMBIC := uv run alembic -c packages/core/alembic.ini
 

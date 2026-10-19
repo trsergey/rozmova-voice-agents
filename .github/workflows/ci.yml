@@ -51,7 +51,7 @@ jobs:
       - run: uv run pytest
 
   contracts:
-    name: contracts (JSON Schema and TS types committed)
+    name: contracts (JSON Schema, OpenAPI and TS types committed)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -64,8 +64,9 @@ jobs:
           node-version: 22
       - run: uv sync --all-packages --locked
       - run: make schemas
+      - run: make client
       - name: Generated files match the commit
-        run: git diff --exit-code packages/contracts || (echo "::error::run 'make schemas' and commit the result" && exit 1)
+        run: git diff --exit-code packages/contracts apps/admin-api/openapi.json apps/admin-web/src/api-schema.d.ts || (echo "::error::run 'make schemas client' and commit the result" && exit 1)
 
   web:
     name: web (eslint, tsc, vitest, build)

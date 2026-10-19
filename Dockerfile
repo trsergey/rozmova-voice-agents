@@ -7,7 +7,7 @@
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm
 ARG NODE_IMAGE=node:22-bookworm-slim
 
-# --- build-web: the admin-web bundle admin-api serves under /demo/ (ROZ-68) ----------------
+# --- build-web: the admin-web bundle admin-api serves (/admin/, /demo/, /assets/) -----------
 FROM ${NODE_IMAGE} AS build-web
 WORKDIR /src/apps/admin-web
 COPY apps/admin-web/package.json apps/admin-web/package-lock.json ./

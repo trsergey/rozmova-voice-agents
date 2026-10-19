@@ -2,15 +2,15 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// The demo page is served by admin-api under /demo/ (ROZ-68). In dev, Vite proxies the API
-// to a local admin-api so the session cookie stays on one origin.
+// admin-api serves the build: pages under /admin/ and /demo/, the bundle under /assets/.
+// In dev, Vite proxies the API to a local admin-api so the session cookie stays on one origin.
 const api = "http://localhost:8000";
 
 export default defineConfig({
-  base: "/demo/",
+  base: "/",
   plugins: [react()],
   server: {
-    proxy: { "/auth": api, "/bots": api, "/calls": api },
+    proxy: { "/auth": api, "/bots": api, "/calls": api, "/kb": api },
   },
   test: {
     environment: "jsdom",
