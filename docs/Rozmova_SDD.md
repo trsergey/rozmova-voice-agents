@@ -359,7 +359,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | `PUT /bots/{id}/credentials` | Ключ провайдера (лише запис, у відповіді `last4`) | FR-17 |
 | `GET /calls`, `GET /calls/{id}` | Список (фільтри `bot_id`, `outcome`, `since`/`until`, keyset-пагінація `cursor`) і таймлайн дзвінка. `admin` бачить усі дзвінки, `viewer` — лише зроблені під його логіном або кодом доступу; чужий дзвінок — 404 | FR-13 |
 | `WS /calls/live` | Живі події дзвінків з `calls:live` (лише `admin`; `?bot_id=` — один бот; перевірка `Origin`; 4401/4403 без сесії або для `viewer`) | FR-13 |
-| `GET /ops/summary` | Дані сторінки «Операції» | FR-20 |
+| `GET /ops/summary` | Дані сторінки «Операції»: активні дзвінки з Redis (`ratelimit:*:calls`), за останню годину й добу з `call_events` — дзвінки, ходи, p95 ходу, першого токена, LLM, пошуку в БЗ і дій, частка помилок дій і помилок на хід; кеш 10 с у процесі | FR-20 |
 | `POST /kb/reindex` | Переіндексація бази знань | FR-15 |
 | `GET /access-codes`, `POST /access-codes`, `DELETE /access-codes/{id}` | Видача й відкликання кодів доступу (лише `admin`); код показується один раз, у БД — SHA-256; відкликання завершує сесії коду | FR-14 |
 

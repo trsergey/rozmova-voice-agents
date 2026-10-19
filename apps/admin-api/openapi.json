@@ -989,6 +989,27 @@
         }
       }
     },
+    "/ops/summary": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Summary",
+        "operationId": "ops_summary_ops_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -2267,6 +2288,109 @@
         "title": "NodeUI",
         "description": "Canvas position. Ignored by validation and by the version diff."
       },
+      "OpsSummary": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "active_calls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Calls"
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/WindowStats"
+            },
+            "type": "array",
+            "title": "Windows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "active_calls",
+          "windows"
+        ],
+        "title": "OpsSummary"
+      },
+      "P95": {
+        "properties": {
+          "turn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn"
+          },
+          "ttft": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttft"
+          },
+          "llm_ttft": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Ttft"
+          },
+          "rag_search": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rag Search"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn",
+          "ttft",
+          "llm_ttft",
+          "rag_search",
+          "tool"
+        ],
+        "title": "P95",
+        "description": "Milliseconds; ``None`` when the window has no samples."
+      },
       "PublishRequest": {
         "properties": {
           "note": {
@@ -2666,6 +2790,76 @@
           "created_by"
         ],
         "title": "VersionOut"
+      },
+      "WindowStats": {
+        "properties": {
+          "window": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "24h"
+            ],
+            "title": "Window"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns"
+          },
+          "p95_ms": {
+            "$ref": "#/components/schemas/P95"
+          },
+          "tool_calls": {
+            "type": "integer",
+            "title": "Tool Calls"
+          },
+          "tool_errors": {
+            "type": "integer",
+            "title": "Tool Errors"
+          },
+          "tool_error_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Error Rate"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "error_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "window",
+          "calls",
+          "turns",
+          "p95_ms",
+          "tool_calls",
+          "tool_errors",
+          "tool_error_rate",
+          "errors",
+          "error_rate"
+        ],
+        "title": "WindowStats"
       }
     }
   }

@@ -1,7 +1,8 @@
 """FastAPI app of the admin API: health check, auth, access codes, call tickets, bots,
-drafts, publish and rollback, provider keys, the knowledge base and the call log; version
-history comes with its ticket. It also serves the built admin-web (``spa``), and persists the
-gateway's call events into the call log in the background (ROZ-62)."""
+drafts, publish and rollback, provider keys, the knowledge base, the call log and the ops
+summary; version history comes with its ticket. It also serves the built admin-web
+(``spa``), and persists the gateway's call events into the call log in the background
+(ROZ-62)."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from admin_api import (
     credentials,
     errors,
     kb,
+    ops,
     publishing,
     spa,
 )
@@ -56,6 +58,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.state.db = factory
     app.state.redis = redis
     app.state.kb = indexer
+    app.state.ops_cache = ops.SummaryCache()
     app.state.cipher = CredentialCipher.from_settings(settings)
     app.state.sessions = SessionStore(redis, settings.admin_session_ttl_seconds)
     errors.install(app)
@@ -69,6 +72,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.include_router(publishing.router)
     app.include_router(credentials.router)
     app.include_router(kb.router)
+    app.include_router(ops.router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

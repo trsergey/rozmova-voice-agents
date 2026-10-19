@@ -190,7 +190,11 @@ class CallEvent(Base):
     type: Mapped[str] = mapped_column(Text)
     payload: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
 
-    __table_args__ = (Index("ix_call_events_call_id_ts", "call_id", "ts"),)
+    __table_args__ = (
+        Index("ix_call_events_call_id_ts", "call_id", "ts"),
+        # The "Операції" page reads one event type over a time window across all calls.
+        Index("ix_call_events_type_ts", "type", "ts"),
+    )
 
 
 class KbDocument(Base):

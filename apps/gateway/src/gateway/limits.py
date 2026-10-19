@@ -20,6 +20,7 @@ import structlog
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from rozmova_core import open_calls
 from rozmova_core.settings import Settings
 
 log = structlog.get_logger(__name__)
@@ -101,4 +102,4 @@ class RateLimiter:
 
     @staticmethod
     def _calls_key(user_id: str) -> str:
-        return f"ratelimit:{user_id}:calls"
+        return open_calls.key(user_id)

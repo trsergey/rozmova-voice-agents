@@ -347,6 +347,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ops/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ops Summary */
+        get: operations["ops_summary_ops_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -867,6 +884,34 @@ export interface components {
             /** Y */
             y: number;
         };
+        /** OpsSummary */
+        OpsSummary: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Active Calls */
+            active_calls: number | null;
+            /** Windows */
+            windows: components["schemas"]["WindowStats"][];
+        };
+        /**
+         * P95
+         * @description Milliseconds; ``None`` when the window has no samples.
+         */
+        P95: {
+            /** Turn */
+            turn: number | null;
+            /** Ttft */
+            ttft: number | null;
+            /** Llm Ttft */
+            llm_ttft: number | null;
+            /** Rag Search */
+            rag_search: number | null;
+            /** Tool */
+            tool: number | null;
+        };
         /** PublishRequest */
         PublishRequest: {
             /** Note */
@@ -1030,6 +1075,29 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by: string | null;
+        };
+        /** WindowStats */
+        WindowStats: {
+            /**
+             * Window
+             * @enum {string}
+             */
+            window: "1h" | "24h";
+            /** Calls */
+            calls: number;
+            /** Turns */
+            turns: number;
+            p95_ms: components["schemas"]["P95"];
+            /** Tool Calls */
+            tool_calls: number;
+            /** Tool Errors */
+            tool_errors: number;
+            /** Tool Error Rate */
+            tool_error_rate: number | null;
+            /** Errors */
+            errors: number;
+            /** Error Rate */
+            error_rate: number | null;
         };
     };
     responses: never;
@@ -1718,6 +1786,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReindexStatus"];
+                };
+            };
+        };
+    };
+    ops_summary_ops_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsSummary"];
                 };
             };
         };
