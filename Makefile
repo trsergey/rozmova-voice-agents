@@ -90,5 +90,6 @@ web-dev: ## Run admin-web on Vite (localhost:5173/admin/ and /demo/), API proxie
 
 web-check: ## admin-web: eslint, tsc, vitest and the production build
 	$(WEB) run lint
+	$(WEB) run typecheck
 	$(WEB) test
 	$(WEB) run build

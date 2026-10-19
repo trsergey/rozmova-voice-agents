@@ -84,6 +84,9 @@ jobs:
           cache-dependency-path: apps/admin-web/package-lock.json
       - run: npm ci
       - run: npm run lint
+      # All code, tests included; the image's build stage has only admin-web, so it
+      # runs the production build alone.
+      - run: npm run typecheck
       - run: npm test
       - run: npm run build
 
