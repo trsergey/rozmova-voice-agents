@@ -1,46 +1,61 @@
 // All client routes. admin-api serves index.html for any path under /admin/ and /demo/
 // (admin_api.spa), so these are the only prefixes; the API owns the rest.
-import { Navigate, type RouteObject } from "react-router";
+//
+// Every page is its own chunk (`lazy`), so the public demo chat never downloads the admin,
+// and the admin loads a page's code on first visit. The entry keeps only what every route
+// needs: React, the router, TanStack Query, the API client and the session guards.
+// scripts/check-bundle.mjs fails the build when that stops being true.
+import type { ComponentType } from "react";
+import { Navigate, type LazyRouteFunction, type RouteObject } from "react-router";
 
-import { AdminLayout } from "./admin/AdminLayout";
-import { BotPage } from "./admin/bots/BotPage";
-import { BotsPage } from "./admin/bots/BotsPage";
-import { CallPage } from "./admin/calls/CallPage";
-import { CallsPage } from "./admin/calls/CallsPage";
-import { AccessCodesPage } from "./admin/codes/AccessCodesPage";
 import { RequireAdmin, RequireSession } from "./admin/guards";
-import { KbPage } from "./admin/kb/KbPage";
-import { LoginPage } from "./admin/LoginPage";
-import { OpsPage } from "./admin/ops/OpsPage";
-import { NotFound } from "./admin/NotFound";
-import { DemoPage } from "./demo/DemoPage";
+
+// A route whose component is the named export of a lazily imported module.
+function page<M>(load: () => Promise<M>, pick: (module: M) => ComponentType): LazyRouteFunction<RouteObject> {
+  return async () => ({ Component: pick(await load()) });
+}
+
+function Loading() {
+  return <p className="p-8 text-sm text-fg-muted">Завантаження…</p>;
+}
 
 export const routes: RouteObject[] = [
-  { path: "/demo/*", element: <DemoPage /> },
-  { path: "/admin/login", element: <LoginPage /> },
   {
-    path: "/admin",
-    element: <RequireSession />,
+    // Shown while the first page's chunk loads.
+    HydrateFallback: Loading,
     children: [
+      { path: "/demo/*", lazy: page(() => import("./demo/DemoPage"), (m) => m.DemoPage) },
+      { path: "/admin/login", lazy: page(() => import("./admin/LoginPage"), (m) => m.LoginPage) },
       {
-        element: <AdminLayout />,
+        path: "/admin",
+        Component: RequireSession,
         children: [
-          { index: true, element: <Navigate to="bots" replace /> },
-          { path: "bots", element: <BotsPage /> },
-          { path: "bots/:botId", element: <BotPage /> },
-          { path: "calls", element: <CallsPage /> },
-          { path: "calls/:callId", element: <CallPage /> },
-          { path: "kb", element: <KbPage /> },
-          { path: "ops", element: <OpsPage /> },
           {
-            element: <RequireAdmin />,
-            children: [{ path: "access-codes", element: <AccessCodesPage /> }],
+            lazy: page(() => import("./admin/AdminLayout"), (m) => m.AdminLayout),
+            children: [
+              { index: true, element: <Navigate to="bots" replace /> },
+              { path: "bots", lazy: page(() => import("./admin/bots/BotsPage"), (m) => m.BotsPage) },
+              { path: "bots/:botId", lazy: page(() => import("./admin/bots/BotPage"), (m) => m.BotPage) },
+              { path: "calls", lazy: page(() => import("./admin/calls/CallsPage"), (m) => m.CallsPage) },
+              { path: "calls/:callId", lazy: page(() => import("./admin/calls/CallPage"), (m) => m.CallPage) },
+              { path: "kb", lazy: page(() => import("./admin/kb/KbPage"), (m) => m.KbPage) },
+              { path: "ops", lazy: page(() => import("./admin/ops/OpsPage"), (m) => m.OpsPage) },
+              {
+                Component: RequireAdmin,
+                children: [
+                  {
+                    path: "access-codes",
+                    lazy: page(() => import("./admin/codes/AccessCodesPage"), (m) => m.AccessCodesPage),
+                  },
+                ],
+              },
+              { path: "*", lazy: page(() => import("./admin/NotFound"), (m) => m.NotFound) },
+            ],
           },
-          { path: "*", element: <NotFound /> },
         ],
       },
+      // Only the Vite dev server reaches other paths; admin-api redirects / to /demo/ itself.
+      { path: "*", element: <Navigate to="/demo/" replace /> },
     ],
   },
-  // Only the Vite dev server reaches other paths; admin-api redirects / to /demo/ itself.
-  { path: "*", element: <Navigate to="/demo/" replace /> },
 ];

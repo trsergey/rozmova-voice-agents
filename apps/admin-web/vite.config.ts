@@ -3,13 +3,15 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+import { bundleCheck } from "./bundle-check.ts";
+
 // admin-api serves the build: pages under /admin/ and /demo/, the bundle under /assets/.
 // In dev, Vite proxies the API to a local admin-api so the session cookie stays on one origin.
 const api = "http://localhost:8000";
 
 export default defineConfig({
   base: "/",
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), bundleCheck()],
   server: {
     proxy: { "/auth": api, "/bots": api, "/calls": { target: api, ws: true }, "/kb": api, "/providers": api, "/ops": api, "/access-codes": api },
   },
