@@ -1,5 +1,6 @@
-// The React Flow canvas over the editor store. The store owns the graph; React Flow's own
-// per-node state (measured size, selection) stays here and is merged into what it renders.
+// The React Flow canvas over the editor store. The store owns the graph and the selected
+// node (the side panel edits it); React Flow's measured node sizes and edge selection stay
+// here and are merged into what it renders.
 import {
   Background,
   Controls,
@@ -24,12 +25,12 @@ export const PALETTE_MIME = "application/x-rozmova-node";
 
 interface Meta {
   measured?: { width?: number; height?: number };
-  selected?: boolean;
 }
 
 export function Canvas({ editable, activeNodeId = null }: { editable: boolean; activeNodeId?: string | null }) {
   const graph = useEditor((state) => state.graph);
   const issues = useEditor((state) => state.issues);
+  const selectedNodeId = useEditor((state) => state.selectedNodeId);
   const { beginDrag, endDrag, moveNodes, connect, remove, select, addNode } = useEditor.getState();
   const [meta, setMeta] = useState<Record<string, Meta>>({});
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
@@ -42,9 +43,10 @@ export function Canvas({ editable, activeNodeId = null }: { editable: boolean; a
         type: "flow",
         position: node.ui ?? { x: 0, y: 0 },
         data: { node, issues: issues.filter((issue) => issue.node_id === node.id), active: node.id === activeNodeId },
+        selected: node.id === selectedNodeId,
         ...meta[node.id],
       })),
-    [graph.nodes, issues, meta, activeNodeId],
+    [graph.nodes, issues, meta, activeNodeId, selectedNodeId],
   );
 
   const edges = useMemo<Edge[]>(
@@ -73,8 +75,6 @@ export function Canvas({ editable, activeNodeId = null }: { editable: boolean; a
       for (const change of changes) {
         if (change.type === "dimensions" && change.dimensions) {
           next = { ...next, [change.id]: { ...next[change.id], measured: change.dimensions } };
-        } else if (change.type === "select") {
-          next = { ...next, [change.id]: { ...next[change.id], selected: change.selected } };
         }
       }
       return next;
@@ -82,6 +82,10 @@ export function Canvas({ editable, activeNodeId = null }: { editable: boolean; a
     for (const change of changes) {
       if (change.type === "position" && change.position && editable) {
         moves.push({ id: change.id, ...change.position });
+      } else if (change.type === "select") {
+        // A click: select this node, or clear the selection it held.
+        if (change.selected) select(change.id);
+        else if (useEditor.getState().selectedNodeId === change.id) select(null);
       }
     }
     if (moves.length > 0) moveNodes(moves);
@@ -121,7 +125,6 @@ export function Canvas({ editable, activeNodeId = null }: { editable: boolean; a
       onConnect={onConnect}
       onNodeDragStart={beginDrag}
       onNodeDragStop={endDrag}
-      onSelectionChange={({ nodes: picked }) => select(picked.length === 1 ? (picked[0]?.id ?? null) : null)}
       onDelete={({ nodes: gone, edges: dropped }) =>
         remove(
           gone.map((node) => node.id),
@@ -136,6 +139,8 @@ export function Canvas({ editable, activeNodeId = null }: { editable: boolean; a
       nodesDraggable={editable}
       nodesConnectable={editable}
       elementsSelectable
+      selectionKeyCode={null}
+      multiSelectionKeyCode={null}
       deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
       colorMode="system"
       fitView

@@ -1,5 +1,18 @@
 import demo from "../../../../../flows/hvylia-demo.json";
-import { DEFAULT_OUTLET, layout, LAYOUT, newNode, outlets, PALETTE, toFlowGraph, toGraph, uniqueId, type FlowGraph, type FlowNode } from "./graph";
+import {
+  DEFAULT_OUTLET,
+  layout,
+  LAYOUT,
+  newNode,
+  outlets,
+  PALETTE,
+  syncRouteEdges,
+  toFlowGraph,
+  toGraph,
+  uniqueId,
+  type FlowGraph,
+  type FlowNode,
+} from "./graph";
 
 const DEMO = demo as FlowGraph;
 
@@ -62,4 +75,22 @@ test("saving keeps the logic exactly and rounds positions", () => {
   expect(flow.edges).toEqual(DEMO.edges);
   expect(logic(flow.nodes)).toEqual(logic(DEMO.nodes));
   expect(flow.nodes?.[0]?.ui).toEqual({ x: 10, y: 21 });
+});
+
+test("route edges follow renamed routes and leave with removed ones", () => {
+  const edges = [
+    { source: "a", target: "x", when: { route: "tariff" } },
+    { source: "a", target: "y", when: { route: "bye" } },
+    { source: "a", target: "z" },
+    { source: "b", target: "x", when: { route: "tariff" } },
+  ];
+
+  expect(syncRouteEdges(edges, "a", ["tariff", "bye"], ["tariffs", "bye"])).toEqual([
+    { source: "a", target: "x", when: { route: "tariffs" } },
+    edges[1],
+    edges[2],
+    edges[3],
+  ]);
+  expect(syncRouteEdges(edges, "a", ["tariff", "bye"], ["bye"])).toEqual([edges[1], edges[2], edges[3]]);
+  expect(syncRouteEdges(edges, "a", ["tariff", "bye"], ["tariff", "bye", "new"])).toEqual(edges);
 });

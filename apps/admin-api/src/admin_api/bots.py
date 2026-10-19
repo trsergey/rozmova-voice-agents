@@ -10,7 +10,7 @@ covers the current draft.
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, Request
@@ -25,14 +25,20 @@ from rozmova_core.models import Bot, BotVersion
 from rozmova_engine.evals.report import EvalReport
 from rozmova_engine.flow import ValidationResult, validate_flow
 from rozmova_engine.providers import registry as providers
-from rozmova_engine.rag.answer import SEARCH_TOOL
+from rozmova_engine.rag.answer import UnavailableKnowledgeBase, knowledge_tools
 from rozmova_engine.tools import MockBilling, ToolRegistry, subscriber_tools
 
 log = structlog.get_logger(__name__)
 
-# The tools a flow may call: the gateway registers the same set (bound to real billing
-# and the knowledge base).
-KNOWN_TOOLS = ToolRegistry(subscriber_tools(MockBilling([]))).names | {SEARCH_TOOL}
+# The tools a flow may call: the gateway registers the same set, bound to real billing and
+# the knowledge base; here they only describe themselves and are never run.
+TOOL_CATALOG = ToolRegistry(
+    [
+        *subscriber_tools(MockBilling([])),
+        *knowledge_tools(UnavailableKnowledgeBase("catalog only")),
+    ]
+)
+KNOWN_TOOLS = TOOL_CATALOG.names
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
@@ -145,6 +151,28 @@ providers_router = APIRouter(tags=["bots"], dependencies=[Depends(current_sessio
 async def list_providers() -> list[str]:
     """The LLM providers a bot may use: the engine's registry."""
     return sorted(providers.names)
+
+
+class ToolOut(BaseModel):
+    name: str
+    description: str
+    # JSON Schema of the arguments, for the editor's tool node form.
+    parameters: dict[str, Any]
+    side_effect: bool
+
+
+@providers_router.get("/tools")
+async def list_tools() -> list[ToolOut]:
+    """The tools flows may use, for the editor (FR-10): the engine's tool registry."""
+    return [
+        ToolOut(
+            name=name,
+            description=TOOL_CATALOG.get(name).description,
+            parameters=TOOL_CATALOG.get(name).spec.parameters,
+            side_effect=TOOL_CATALOG.has_side_effect(name),
+        )
+        for name in sorted(TOOL_CATALOG.names)
+    ]
 
 
 @router.get("")

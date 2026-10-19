@@ -720,6 +720,32 @@
         }
       }
     },
+    "/tools": {
+      "get": {
+        "tags": [
+          "bots"
+        ],
+        "summary": "List Tools",
+        "description": "The tools flows may use, for the editor (FR-10): the engine's tool registry.",
+        "operationId": "list_tools_tools_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Tools Tools Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/bots/{bot_id}/publish": {
       "post": {
         "tags": [
@@ -2650,6 +2676,35 @@
         ],
         "title": "ToolNode",
         "description": "Deterministic tool call without the LLM. One outgoing edge."
+      },
+      "ToolOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "side_effect": {
+            "type": "boolean",
+            "title": "Side Effect"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "parameters",
+          "side_effect"
+        ],
+        "title": "ToolOut"
       },
       "UserOut": {
         "properties": {

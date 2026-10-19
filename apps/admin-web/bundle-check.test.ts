@@ -63,7 +63,7 @@ test("chunks over budget fail", () => {
   ]);
 });
 
-test("the flow editor has its own budget", () => {
+test("the flow editor's chunks have their own budget", () => {
   const editor = (size: number) =>
     chunk("EditorPage.js", { facadeModuleId: "/app/src/admin/editor/EditorPage.tsx", imports: ["index.js"], size });
 
@@ -71,4 +71,10 @@ test("the flow editor has its own budget", () => {
   expect(checkBundle([entry(), demo(), editor(BUDGET_BYTES.editor + 1)])).toEqual([
     expect.stringMatching(/^EditorPage\.js is \d+ bytes/),
   ]);
+});
+
+test("the editor budget does not cover other pages", () => {
+  const bots = chunk("BotsPage.js", { facadeModuleId: "/app/src/admin/bots/BotsPage.tsx", size: BUDGET_BYTES.chunk + 1 });
+
+  expect(checkBundle([entry(), demo(), bots])).toEqual([expect.stringMatching(/^BotsPage\.js is \d+ bytes/)]);
 });

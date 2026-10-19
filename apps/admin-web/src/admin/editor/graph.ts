@@ -53,6 +53,48 @@ export function outlets(node: FlowNode): Outlet[] {
   }
 }
 
+// Equal as JSON regardless of key order (the server and the forms order keys differently).
+export function sameJson(a: unknown, b: unknown): boolean {
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .sort(([x], [y]) => (x < y ? -1 : 1))
+              .map(([k, v]) => [k, canonical(v)]),
+          )
+        : value;
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+}
+
+// The route names a node declares, in order.
+export function routesOf(node: FlowNode): string[] {
+  if (node.type === "llm_prompt") return node.data.routes ?? [];
+  if (node.type === "condition") return (node.data.cases ?? []).map((c) => c.route);
+  return [];
+}
+
+// Keep a node's edges in step with its routes after the routes were edited: a route renamed
+// in place takes its edge along, a removed route drops its edge.
+export function syncRouteEdges(edges: FlowEdge[], nodeId: string, before: string[], after: string[]): FlowEdge[] {
+  const renamed = new Map<string, string>();
+  if (before.length === after.length) {
+    before.forEach((name, i) => {
+      const next = after[i];
+      if (next !== undefined && next !== name) renamed.set(name, next);
+    });
+  }
+  const kept = new Set(after);
+  return edges.flatMap((edge) => {
+    const route = edge.when?.route;
+    if (edge.source !== nodeId || route === undefined) return [edge];
+    const next = renamed.get(route);
+    if (next !== undefined) return [{ ...edge, when: { route: next } }];
+    return kept.has(route) ? [edge] : [];
+  });
+}
+
 export function hasInlet(node: FlowNode): boolean {
   return node.type !== "start";
 }

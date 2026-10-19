@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from rozmova_contracts.export_schemas import ZOD_DEFS, deref
 from rozmova_contracts.flow import (
     ConditionNode,
     EndNode,
@@ -199,3 +200,11 @@ def test_logic_hash_follows_same_logic() -> None:
     assert flow.logic_hash() == moved.logic_hash()
     assert flow.logic_hash() != rewired.logic_hash()
     assert FlowGraph().logic_hash() != flow.logic_hash()
+
+
+def test_deref_inlines_every_reference() -> None:
+    for name in ZOD_DEFS:
+        assert "$ref" not in json.dumps(deref(name)), name
+
+    cases = deref("ConditionData")["properties"]["cases"]["items"]
+    assert cases["required"] == ["when", "route"]

@@ -7,15 +7,21 @@ import {
   DEFAULT_OUTLET,
   newNode,
   outletOf,
+  routesOf,
+  sameJson,
+  syncRouteEdges,
   toGraph,
   uniqueId,
   type FlowGraph,
   type FlowIssue,
+  type FlowNode,
   type Graph,
   type NodeType,
 } from "./graph";
 
 const HISTORY_LIMIT = 100;
+// Edits of one node's settings this close together are one undo step (typing a prompt).
+const COALESCE_MS = 1000;
 
 interface EditorState {
   graph: Graph;
@@ -31,6 +37,7 @@ interface EditorState {
   endDrag: () => void;
   moveNodes: (moves: { id: string; x: number; y: number }[]) => void;
   connect: (source: string, outlet: string, target: string) => void;
+  updateData: (nodeId: string, data: FlowNode["data"]) => void;
   remove: (nodeIds: string[], edgeIndexes: number[]) => void;
   undo: () => void;
   redo: () => void;
@@ -43,13 +50,20 @@ const serialize = (graph: Graph) => JSON.stringify(graph);
 const empty: Graph = { nodes: [], edges: [] };
 
 export const useEditor = create<EditorState>()((set, get) => {
-  // Apply an edit as one undoable step.
-  const edit = (next: Graph) =>
-    set((state) => ({
-      graph: next,
-      past: [...state.past, state.graph].slice(-HISTORY_LIMIT),
-      future: [],
-    }));
+  let lastEdit: { key: string; at: number } | null = null;
+
+  // Apply an edit as one undoable step, or fold it into the previous step when it has the
+  // same coalescing key and follows it closely.
+  const edit = (next: Graph, coalesceKey?: string) => {
+    const now = Date.now();
+    const fold = coalesceKey !== undefined && lastEdit?.key === coalesceKey && now - lastEdit.at < COALESCE_MS;
+    lastEdit = coalesceKey === undefined ? null : { key: coalesceKey, at: now };
+    set((state) =>
+      fold
+        ? { graph: next, future: [] }
+        : { graph: next, past: [...state.past, state.graph].slice(-HISTORY_LIMIT), future: [] },
+    );
+  };
 
   return {
     graph: empty,
@@ -60,6 +74,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedNodeId: null,
 
     load: (flow) => {
+      lastEdit = null;
       const graph = toGraph(flow);
       set({ graph, past: [], future: [], saved: serialize(graph), issues: [], selectedNodeId: null });
     },
@@ -107,6 +122,20 @@ export const useEditor = create<EditorState>()((set, get) => {
       edit({ ...graph, edges: [...kept, edge] });
     },
 
+    updateData: (nodeId, data) => {
+      const { graph } = get();
+      const node = graph.nodes.find((n) => n.id === nodeId);
+      if (!node || sameJson(node.data, data)) return;
+      const updated = { ...node, data } as FlowNode;
+      edit(
+        {
+          nodes: graph.nodes.map((n) => (n.id === nodeId ? updated : n)),
+          edges: syncRouteEdges(graph.edges, nodeId, routesOf(node), routesOf(updated)),
+        },
+        `data:${nodeId}`,
+      );
+    },
+
     remove: (nodeIds, edgeIndexes) => {
       if (nodeIds.length === 0 && edgeIndexes.length === 0) return;
       const { graph, selectedNodeId } = get();
@@ -121,19 +150,23 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (selectedNodeId && gone.has(selectedNodeId)) set({ selectedNodeId: null });
     },
 
-    undo: () =>
+    undo: () => {
+      lastEdit = null;
       set((state) => {
         const previous = state.past.at(-1);
         if (!previous) return state;
         return { graph: previous, past: state.past.slice(0, -1), future: [state.graph, ...state.future] };
-      }),
+      });
+    },
 
-    redo: () =>
+    redo: () => {
+      lastEdit = null;
       set((state) => {
         const [next, ...rest] = state.future;
         if (!next) return state;
         return { graph: next, past: [...state.past, state.graph], future: rest };
-      }),
+      });
+    },
 
     markSaved: (graph) => set({ saved: serialize(graph) }),
     setIssues: (issues) => set({ issues }),

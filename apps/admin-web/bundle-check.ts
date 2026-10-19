@@ -12,9 +12,10 @@ export interface ChunkInfo {
   size: number; // bytes
 }
 
-// The flow editor carries React Flow (~150 kB), so it gets its own, larger budget.
+// The flow editor's chunks get their own, larger budget: the page carries React Flow
+// (~150 kB) and the node forms, loaded on first selection, zod and React Hook Form (~120 kB).
 export const BUDGET_BYTES = { entry: 400_000, chunk: 100_000, editor: 250_000 };
-const EDITOR = /\/src\/admin\/editor\/EditorPage\.tsx$/;
+const EDITOR = /\/src\/admin\/editor\//;
 // The admin code every route needs: the session and its guards.
 const SHARED_ADMIN = /\/src\/admin\/(guards|session)\.tsx?$/;
 const ADMIN = /\/src\/admin\//;

@@ -83,3 +83,39 @@ test("removing a node removes its edges; removing an edge leaves the nodes", () 
   editor().undo();
   expect(selectDirty(editor())).toBe(false);
 });
+
+test("typing into one node's settings is one undo step", () => {
+  vi.useFakeTimers();
+  const before = editor().past.length;
+
+  editor().updateData("start", { greeting: "П" });
+  vi.advanceTimersByTime(200);
+  editor().updateData("start", { greeting: "Пр" });
+  vi.advanceTimersByTime(200);
+  editor().updateData("start", { greeting: "Привіт" });
+  expect(editor().past.length).toBe(before + 1);
+
+  vi.advanceTimersByTime(2000);
+  editor().updateData("start", { greeting: "Привіт!" });
+  expect(editor().past.length).toBe(before + 2);
+
+  editor().undo();
+  editor().updateData("start", { greeting: "Добрий день" });
+  expect(editor().past.length).toBe(before + 2);
+  vi.useRealTimers();
+});
+
+test("renaming a route in the settings moves its edge; an unchanged update is no step", () => {
+  const assist = editor().graph.nodes.find((n) => n.id === "assist");
+  if (assist?.type !== "llm_prompt") throw new Error("assist is an llm_prompt");
+  const routes = assist.data.routes ?? [];
+
+  editor().updateData("assist", { ...assist.data, routes: routes.map((r) => (r === "tariff" ? "tariffs" : r)) });
+
+  expect(edgesFrom("assist").find((e) => e.target === "tariff_kb")?.when).toEqual({ route: "tariffs" });
+  const steps = editor().past.length;
+  const current = editor().graph.nodes.find((n) => n.id === "assist");
+  if (!current) throw new Error("assist exists");
+  editor().updateData("assist", current.data);
+  expect(editor().past.length).toBe(steps);
+});

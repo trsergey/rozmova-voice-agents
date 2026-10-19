@@ -257,6 +257,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tools
+         * @description The tools flows may use, for the editor (FR-10): the engine's tool registry.
+         */
+        get: operations["list_tools_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bots/{bot_id}/publish": {
         parameters: {
             query?: never;
@@ -1019,6 +1039,19 @@ export interface components {
             type: "tool";
             data: components["schemas"]["ToolData"];
         };
+        /** ToolOut */
+        ToolOut: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Side Effect */
+            side_effect: boolean;
+        };
         /**
          * UserOut
          * @description ``id`` is the user's id, or the access code's id for a viewer who used a code.
@@ -1593,6 +1626,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": string[];
+                };
+            };
+        };
+    };
+    list_tools_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"][];
                 };
             };
         };

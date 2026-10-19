@@ -3,7 +3,7 @@
 // validator, whose errors frame their nodes. Viewers see the same canvas read-only.
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertDialog } from "radix-ui";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useParams } from "react-router";
 
 import { client, csrf, unwrap } from "../../api/client";
@@ -13,6 +13,8 @@ import { useCanEdit, useCurrentSession } from "../session";
 import { Button, ErrorText } from "../ui";
 import { Canvas, PALETTE_MIME } from "./Canvas";
 import { ISSUE_TEXT, LAYOUT, NODE_KINDS, PALETTE, toFlowGraph, type FlowIssue, type NodeType } from "./graph";
+// The forms bring zod and React Hook Form; they load when a node is first selected.
+const NodeForm = lazy(() => import("./NodeForm").then((m) => ({ default: m.NodeForm })));
 import { selectDirty, useEditor } from "./store";
 
 export function EditorPage() {
@@ -100,7 +102,7 @@ export function EditorPage() {
         <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-line bg-surface" aria-label="Холст флоу">
           <Canvas editable={canEdit} />
         </div>
-        <IssuesPanel warnings={warnings} checking={validate.isPending} />
+        <SidePanel editable={canEdit} warnings={warnings} checking={validate.isPending} />
       </div>
       <LeaveDialog
         open={blocker.state === "blocked"}
@@ -184,18 +186,36 @@ function Palette() {
   );
 }
 
+// The selected node's form, or the whole flow's check when nothing is selected.
+function SidePanel({ editable, warnings, checking }: { editable: boolean; warnings: FlowIssue[]; checking: boolean }) {
+  const node = useEditor((state) => state.graph.nodes.find((n) => n.id === state.selectedNodeId));
+  const issues = useEditor((state) => state.issues);
+  if (!node) return <IssuesPanel warnings={warnings} checking={checking} />;
+  return (
+    <aside aria-label="Налаштування вузла" className="w-80 shrink-0 overflow-y-auto rounded-lg border border-line bg-surface p-3">
+      <Suspense fallback={<p className="text-sm text-fg-muted">Завантаження…</p>}>
+        <NodeForm node={node} issues={issues.filter((issue) => issue.node_id === node.id)} editable={editable} />
+      </Suspense>
+    </aside>
+  );
+}
+
 function IssuesPanel({ warnings, checking }: { warnings: FlowIssue[]; checking: boolean }) {
   const errors = useEditor((state) => state.issues);
   const dirty = useEditor(selectDirty);
   const line = (issue: FlowIssue, index: number) => (
     <li key={index} className="text-xs">
-      {issue.node_id && <code className="mr-1 font-mono">{issue.node_id}</code>}
+      {issue.node_id && (
+        <button type="button" className="mr-1 font-mono underline" onClick={() => useEditor.getState().select(issue.node_id)}>
+          {issue.node_id}
+        </button>
+      )}
       {ISSUE_TEXT[issue.code] ?? issue.message}
     </li>
   );
 
   return (
-    <aside aria-label="Перевірка" className="hidden w-64 shrink-0 overflow-y-auto rounded-lg border border-line bg-surface p-3 lg:block">
+    <aside aria-label="Перевірка" className="hidden w-80 shrink-0 overflow-y-auto rounded-lg border border-line bg-surface p-3 lg:block">
       <h2 className="mb-2 text-sm font-medium">
         Перевірка{checking && <span className="font-normal text-fg-muted"> · триває…</span>}
       </h2>

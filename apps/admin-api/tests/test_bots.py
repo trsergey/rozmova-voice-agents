@@ -265,3 +265,22 @@ def test_providers_come_from_the_engine(clients: tuple[Client, Client]) -> None:
 
     expected = ["anthropic", "azure_openai", "openai", "openrouter"]
     assert viewer.http.get("/providers").json() == expected
+
+
+@pytest.mark.integration
+def test_tools_come_from_the_engine_registry(clients: tuple[Client, Client]) -> None:
+    _, viewer = clients
+
+    tools = {tool["name"]: tool for tool in viewer.http.get("/tools").json()}
+
+    assert set(tools) == {
+        "activate_service",
+        "get_balance",
+        "get_current_tariff",
+        "list_services",
+        "search_knowledge_base",
+    }
+    assert tools["activate_service"]["side_effect"] is True
+    assert tools["get_balance"]["side_effect"] is False
+    assert tools["activate_service"]["parameters"]["type"] == "object"
+    assert tools["search_knowledge_base"]["description"]

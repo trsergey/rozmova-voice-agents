@@ -66,7 +66,7 @@ jobs:
       - run: make schemas
       - run: make client
       - name: Generated files match the commit
-        run: git diff --exit-code packages/contracts apps/admin-api/openapi.json apps/admin-web/src/api/schema.d.ts || (echo "::error::run 'make schemas client' and commit the result" && exit 1)
+        run: git diff --exit-code packages/contracts apps/admin-api/openapi.json apps/admin-web/src/api/schema.d.ts apps/admin-web/src/api/flow.zod.ts || (echo "::error::run 'make schemas client' and commit the result" && exit 1)
 
   web:
     name: web (eslint, tsc, vitest, build)

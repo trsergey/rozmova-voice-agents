@@ -1,11 +1,15 @@
 """Export JSON Schema for the contracts to ``packages/contracts/schema/``.
 
 Run with ``make schemas``, which then generates TS types from these files into
-``packages/contracts/ts/`` for the admin web. Both are committed; a contract test fails
-when the JSON Schema is out of date, so the models and the schema cannot silently drift.
+``packages/contracts/ts/`` for the admin web, and zod schemas of the flow node settings
+into ``apps/admin-web/src/api/flow.zod.ts`` for the editor's forms (``--deref`` prints one
+definition with its references inlined, which the zod generator needs). All are committed;
+a contract test fails when the JSON Schema is out of date, so the models and the schema
+cannot silently drift.
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +44,41 @@ def render(title: str, adapter: TypeAdapter[Any]) -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
 
 
+# The flow definitions the editor's forms validate: the settings of each node type.
+ZOD_DEFS = (
+    "StartData",
+    "LLMPromptData",
+    "ToolData",
+    "KBAnswerData",
+    "ConditionData",
+    "HandoffData",
+    "EndData",
+)
+
+
+def deref(name: str) -> dict[str, Any]:
+    """A ``$defs`` entry of the flow schema with every ``$ref`` replaced by its target."""
+    schema = flow_graph_adapter.json_schema(mode="serialization", schema_generator=_NoFieldTitles)
+    defs: dict[str, Any] = schema["$defs"]
+
+    def inline(node: Any) -> Any:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str):
+                return inline(defs[ref.removeprefix("#/$defs/")])
+            return {key: inline(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [inline(item) for item in node]
+        return node
+
+    resolved: dict[str, Any] = inline(defs[name])
+    return resolved
+
+
 def main() -> None:
+    if len(sys.argv) == 3 and sys.argv[1] == "--deref":
+        print(json.dumps(deref(sys.argv[2]), ensure_ascii=False))
+        return
     SCHEMA_DIR.mkdir(exist_ok=True)
     for filename, (title, adapter) in SCHEMAS.items():
         path = SCHEMA_DIR / filename
