@@ -3,8 +3,8 @@
 // an utterance the server did not answer is sent again after the resume.
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
-import type { ClientMessage } from "../../../packages/contracts/ts/protocol.client";
-import type { ServerMessage } from "../../../packages/contracts/ts/protocol.server";
+import type { ClientMessage } from "../../../../packages/contracts/ts/protocol.client";
+import type { ServerMessage } from "../../../../packages/contracts/ts/protocol.server";
 import { api } from "./api";
 import { callReducer, initialCallState } from "./callState";
 

@@ -1,9 +1,10 @@
-// The public demo page (ROZ-68): an access-code login, then a chat with the first published
-// bot (the seeded demo bot). The full admin UI comes with ROZ-41.
+// The public demo page at /demo/ (ROZ-68): an access-code login, then a chat with the first
+// published bot (the seeded demo bot). Its styles are scoped under `.demo`.
 import { useEffect, useState, type FormEvent } from "react";
 
 import { api, ApiError, type Bot, type Session } from "./api";
 import { Chat } from "./Chat";
+import "./demo.css";
 
 type Loaded = { status: "loading" } | { status: "anonymous" } | { status: "ready"; session: Session; bot: Bot | null };
 
@@ -12,8 +13,12 @@ async function load(session: Session): Promise<Loaded> {
   return { status: "ready", session, bot: bots.find((bot) => bot.live_version_id !== null) ?? null };
 }
 
-export function App() {
+export function DemoPage() {
   const [state, setState] = useState<Loaded>({ status: "loading" });
+
+  useEffect(() => {
+    document.title = "Hvylia Mobile — демо асистента";
+  }, []);
 
   useEffect(() => {
     api
@@ -29,7 +34,7 @@ export function App() {
   };
 
   return (
-    <main className="page">
+    <main className="demo page">
       <header className="header">
         <h1>Hvylia Mobile</h1>
         <p className="subtitle">Демо голосового асистента підтримки, поки що текстом</p>

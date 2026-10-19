@@ -44,7 +44,7 @@ OPENAPI_TS := npx --yes openapi-typescript@7.13.0
 
 client: ## Export the admin API's OpenAPI schema and generate the admin-web TS client types
 	uv run python -m admin_api.openapi
-	$(OPENAPI_TS) apps/admin-api/openapi.json --output apps/admin-web/src/api-schema.d.ts
+	$(OPENAPI_TS) apps/admin-api/openapi.json --output apps/admin-web/src/api/schema.d.ts
 
 ALEMBIC := uv run alembic -c packages/core/alembic.ini
 
@@ -85,7 +85,7 @@ WEB := npm --prefix apps/admin-web
 web-install: ## Install the admin-web dependencies (Node 22+)
 	$(WEB) ci
 
-web-dev: ## Run the demo page on Vite (http://localhost:5173/demo/), API proxied to localhost:8000
+web-dev: ## Run admin-web on Vite (localhost:5173/admin/ and /demo/), API proxied to localhost:8000
 	$(WEB) run dev
 
 web-check: ## admin-web: eslint, tsc, vitest and the production build

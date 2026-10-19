@@ -1,4 +1,4 @@
-import type { ServerMessage } from "../../../packages/contracts/ts/protocol.server";
+import type { ServerMessage } from "../../../../packages/contracts/ts/protocol.server";
 import { callReducer, initialCallState, type CallAction, type CallState } from "./callState";
 
 const CALL_ID = "3f2c1b9e-8d4a-4c1e-9b7a-2e5d6f8a9b0c";

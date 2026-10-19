@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -8,7 +9,7 @@ const api = "http://localhost:8000";
 
 export default defineConfig({
   base: "/",
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     proxy: { "/auth": api, "/bots": api, "/calls": api, "/kb": api },
   },

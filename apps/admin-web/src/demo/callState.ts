@@ -1,6 +1,6 @@
 // What the chat shows, as a pure function of the server events (docs/protocol.md). The
 // WebSocket handling lives in useCall; this file has no I/O so the tests drive it directly.
-import type { ServerMessage, Source } from "../../../packages/contracts/ts/protocol.server";
+import type { ServerMessage, Source } from "../../../../packages/contracts/ts/protocol.server";
 
 export type Phase = "idle" | "connecting" | "live" | "reconnecting" | "ended";
 

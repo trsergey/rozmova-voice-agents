@@ -2,8 +2,8 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import type { ServerMessage } from "../../../packages/contracts/ts/protocol.server";
-import { App } from "./App";
+import type { ServerMessage } from "../../../../packages/contracts/ts/protocol.server";
+import { DemoPage } from "./DemoPage";
 
 const CALL_ID = "3f2c1b9e-8d4a-4c1e-9b7a-2e5d6f8a9b0c";
 const BOT = { id: "bot-1", name: "Hvylia demo", live_version_id: "v-1", live_version: 2 };
@@ -44,10 +44,11 @@ function fakeApi(routes: Record<string, Route>) {
   const calls: { key: string; body: unknown; csrf: string | null }[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (path: string, init: RequestInit) => {
-      const key = `${init.method} ${path}`;
-      const body = init.body ? JSON.parse(init.body as string) : undefined;
-      calls.push({ key, body, csrf: (init.headers as Record<string, string>)["X-CSRF-Token"] ?? null });
+    vi.fn(async (request: Request) => {
+      const key = `${request.method} ${new URL(request.url).pathname}`;
+      const text = await request.text();
+      const body = text ? JSON.parse(text) : undefined;
+      calls.push({ key, body, csrf: request.headers.get("X-CSRF-Token") });
       const route = routes[key];
       const { status, body: out } = route ? route(body) : { status: 404, body: { error: { code: "not_found", message: "x" } } };
       return new Response(out === undefined ? null : JSON.stringify(out), { status });
@@ -75,7 +76,7 @@ const greeting: ServerMessage[] = [
 
 async function startCall() {
   const user = userEvent.setup();
-  render(<App />);
+  render(<DemoPage />);
   await user.click(await screen.findByRole("button", { name: "Почати розмову" }));
   const ws = FakeWebSocket.instances.at(-1);
   if (!ws) throw new Error("no WebSocket opened");
@@ -105,7 +106,7 @@ test("an access code logs in and opens the chat with the published bot", async (
     "GET /bots": loggedIn["GET /bots"],
   });
   const user = userEvent.setup();
-  render(<App />);
+  render(<DemoPage />);
 
   await user.type(await screen.findByLabelText("Код доступу"), "WRONG");
   await user.click(screen.getByRole("button", { name: "Увійти" }));
@@ -120,13 +121,13 @@ test("an access code logs in and opens the chat with the published bot", async (
   expect(calls.map((call) => call.key)).toContain("POST /auth/access-code");
 });
 
-test("a call streams the reply, lists the cited sources and sends no debug flag", async () => {
+test("a call streams the reply, lists the cited sources and asks for no debug events", async () => {
   const calls = fakeApi(loggedIn);
   const { user, ws } = await startCall();
 
   expect(ws.url).toContain(`call_id=${CALL_ID}`);
   const ticketCall = calls.find((call) => call.key === "POST /calls/ticket");
-  expect(ticketCall?.body).toEqual({ bot_id: "bot-1", call_id: null });
+  expect(ticketCall?.body).toEqual({ bot_id: "bot-1", call_id: null, debug: false });
   expect(ticketCall?.csrf).toBe("csrf-1");
   expect(screen.getByText("Вітаю! Чим можу допомогти?")).toBeInTheDocument();
 
@@ -185,8 +186,8 @@ test("a gateway restart reconnects with the same call_id and resends the unanswe
 
   const ticketBodies = calls.filter((call) => call.key === "POST /calls/ticket").map((call) => call.body);
   expect(ticketBodies).toEqual([
-    { bot_id: "bot-1", call_id: null },
-    { bot_id: "bot-1", call_id: CALL_ID },
+    { bot_id: "bot-1", call_id: null, debug: false },
+    { bot_id: "bot-1", call_id: CALL_ID, debug: false },
   ]);
   const resumed = FakeWebSocket.instances.at(-1);
   expect(resumed).not.toBe(ws);
