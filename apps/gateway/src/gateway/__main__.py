@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from gateway.app import create_app
 from gateway.bots import DemoKeySettings, Providers, PublishedBotLoader
 from gateway.calls import Calls
+from rozmova_core.credentials import CredentialCipher
 from rozmova_core.db import create_engine, create_session_factory
 from rozmova_core.log import configure_logging
 from rozmova_core.redis_client import create_redis
@@ -95,7 +96,8 @@ def build() -> GatewayServer:
     demo = DemoKeySettings()
     # One pool for bots and the knowledge base; the loader disposes it on shutdown.
     engine = create_engine(settings)
-    loader = PublishedBotLoader(redis, engine, Providers.from_settings(demo))
+    providers = Providers.from_settings(demo, CredentialCipher.from_settings(settings))
+    loader = PublishedBotLoader(redis, engine, providers)
     calls = Calls()
     app = create_app(loader, redis, settings, calls, knowledge_base(settings, demo, engine))
     # A container service listens on all interfaces.

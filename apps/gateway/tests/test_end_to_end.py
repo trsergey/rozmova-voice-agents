@@ -44,7 +44,7 @@ class ScriptedProviders(Providers):
         super().__init__({})
         self.fake = fake
 
-    def get(self, name: str) -> LLMProvider:
+    def get(self, name: str, ciphertext: str | None = None) -> LLMProvider:
         return self.fake
 
 

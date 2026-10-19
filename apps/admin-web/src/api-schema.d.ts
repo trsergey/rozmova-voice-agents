@@ -234,6 +234,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bots/{bot_id}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Credentials */
+        get: operations["list_credentials_bots__bot_id__credentials_get"];
+        /** Put Credential */
+        put: operations["put_credential_bots__bot_id__credentials_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kb/documents": {
         parameters: {
             query?: never;
@@ -385,6 +403,28 @@ export interface components {
              */
             type: "condition";
             data: components["schemas"]["ConditionData"];
+        };
+        /** CredentialIn */
+        CredentialIn: {
+            /** Provider */
+            provider: string;
+            /**
+             * Api Key
+             * Format: password
+             */
+            api_key: string;
+        };
+        /** CredentialOut */
+        CredentialOut: {
+            /** Provider */
+            provider: string;
+            /** Last4 */
+            last4: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** DraftOut */
         DraftOut: {
@@ -1270,6 +1310,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_credentials_bots__bot_id__credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_credential_bots__bot_id__credentials_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialOut"];
                 };
             };
             /** @description Validation Error */

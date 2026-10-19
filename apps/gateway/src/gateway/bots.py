@@ -8,6 +8,11 @@ signal still reaches new calls well within a minute. A reconnecting call loads t
 version it started on (versions are immutable, so they are cached for good), and the
 admin's test console loads the draft.
 
+The provider client is built from the bot's own key (``provider_credentials``, FR-17) when it
+has one for its provider, decrypted in memory here; otherwise from the gateway's demo key.
+Keys are cached per bot like live versions (``ttl``, dropped on ``bot:published``, which
+admin-api also sends when a key changes).
+
 ``StaticBotLoader`` serves one flow with one provider: the gateway's tests use it.
 """
 
@@ -30,7 +35,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import live_bots
-from rozmova_core.models import Bot, BotVersion
+from rozmova_core.credentials import CredentialCipher
+from rozmova_core.models import Bot, BotVersion, ProviderCredential
 from rozmova_engine.providers import LLMProvider, ProviderConfig, registry
 
 log = structlog.get_logger(__name__)
@@ -64,7 +70,7 @@ class BotLoader(Protocol):
 
 
 class DemoKeySettings(BaseSettings):
-    """``ROZMOVA_DEMO_*``: the one LLM key every bot uses until per-bot keys (ROZ-32)."""
+    """``ROZMOVA_DEMO_*``: the LLM key of bots without their own key (ROZ-32)."""
 
     model_config = SettingsConfigDict(env_prefix="ROZMOVA_DEMO_", extra="ignore")
 
@@ -74,21 +80,38 @@ class DemoKeySettings(BaseSettings):
 
 
 class Providers:
-    """One client per provider name for the process, created on first use."""
+    """One client per provider name and key for the process, created on first use.
 
-    def __init__(self, configs: dict[str, ProviderConfig]) -> None:
+    ``ciphertext`` is a bot's encrypted key; clients are keyed by it, so a bot whose key
+    changed gets a new client while calls in flight keep the old one. Old clients stay
+    until shutdown: keys change rarely and a client is a connection pool, not a session.
+    """
+
+    def __init__(
+        self, configs: dict[str, ProviderConfig], cipher: CredentialCipher | None = None
+    ) -> None:
         self._configs = configs
-        self._clients: dict[str, LLMProvider] = {}
+        self._cipher = cipher
+        self._clients: dict[tuple[str, str | None], LLMProvider] = {}
 
     @classmethod
-    def from_settings(cls, settings: DemoKeySettings) -> "Providers":
+    def from_settings(
+        cls, settings: DemoKeySettings, cipher: CredentialCipher | None = None
+    ) -> "Providers":
         config = ProviderConfig(api_key=settings.api_key, base_url=settings.base_url)
-        return cls({settings.provider: config})
+        return cls({settings.provider: config}, cipher)
 
-    def get(self, name: str) -> LLMProvider:
-        if name not in self._clients:
-            self._clients[name] = registry.create(name, self._configs.get(name, ProviderConfig()))
-        return self._clients[name]
+    def get(self, name: str, ciphertext: str | None = None) -> LLMProvider:
+        """Raises ``CredentialError`` when the key cannot be decrypted."""
+        if self._cipher is None:
+            ciphertext = None  # no master key: every bot runs on the demo key
+        key = (name, ciphertext)
+        if key not in self._clients:
+            config = self._configs.get(name, ProviderConfig())
+            if ciphertext is not None and self._cipher is not None:
+                config = config.model_copy(update={"api_key": self._cipher.decrypt(ciphertext)})
+            self._clients[key] = registry.create(name, config)
+        return self._clients[key]
 
     async def aclose(self) -> None:
         for client in self._clients.values():
@@ -125,6 +148,7 @@ class PublishedBotLoader:
         self._ttl = ttl
         self._clock = clock
         self._live: dict[UUID, tuple[float, _Spec]] = {}
+        self._keys: dict[UUID, tuple[float, dict[str, str]]] = {}
         self._versions: OrderedDict[tuple[UUID, int], _Spec] = OrderedDict()
         self._max_versions = max_versions
 
@@ -138,20 +162,22 @@ class PublishedBotLoader:
                 spec = await self._version(bot_id, version)
             else:
                 spec = await self._live_spec(bot_id)
+            ciphertext = None if spec is None else (await self._bot_keys(bot_id)).get(spec.provider)
         except (SQLAlchemyError, OSError) as exc:
             log.exception("bot_load_failed", bot_id=str(bot_id))
             raise BotUnavailableError(str(exc)) from exc
         if spec is None:
             return None
         try:
-            provider = self._providers.get(spec.provider)
-        except Exception as exc:  # any SDK error while building a client; not BaseException
+            provider = self._providers.get(spec.provider, ciphertext)
+        except Exception as exc:  # a bad key or any SDK error building a client; not BaseException
             log.exception("provider_unavailable", bot_id=str(bot_id), provider=spec.provider)
             raise BotUnavailableError(f"provider {spec.provider}") from exc
         return BotRuntime(spec.flow, provider, spec.model, spec.version, spec.provider)
 
     def invalidate(self, bot_id: UUID) -> None:
         self._live.pop(bot_id, None)
+        self._keys.pop(bot_id, None)
 
     async def watch(self) -> None:
         """Drop a bot's cached live version when ``bot:published`` names it.
@@ -163,7 +189,7 @@ class PublishedBotLoader:
             try:
                 async with self._redis.pubsub() as pubsub:
                     await pubsub.subscribe(live_bots.PUBLISHED_CHANNEL)
-                    self._live.clear()
+                    self._clear()
                     while True:
                         message = await pubsub.get_message(
                             ignore_subscribe_messages=True, timeout=1.0
@@ -172,8 +198,12 @@ class PublishedBotLoader:
                             self._on_published(message["data"])
             except (RedisError, OSError):
                 log.warning("bot_published_watch_failed", exc_info=True)
-                self._live.clear()
+                self._clear()
                 await asyncio.sleep(1.0)
+
+    def _clear(self) -> None:
+        self._live.clear()
+        self._keys.clear()
 
     def _on_published(self, data: object) -> None:
         try:
@@ -198,6 +228,31 @@ class PublishedBotLoader:
         if spec is not None:
             self._live[bot_id] = (self._clock() + self._ttl, spec)
         return spec
+
+    async def _bot_keys(self, bot_id: UUID) -> dict[str, str]:
+        """The bot's encrypted keys by provider; decrypted only when a client is built.
+
+        With PostgreSQL down, an expired entry still serves: the live version may come from
+        Redis then, and a call should not fail only because its key could not be re-read.
+        """
+        cached = self._keys.get(bot_id)
+        if cached is not None and cached[0] > self._clock():
+            return cached[1]
+        try:
+            async with self._db() as db:
+                rows = await db.execute(
+                    select(ProviderCredential.provider, ProviderCredential.secret_ciphertext).where(
+                        ProviderCredential.bot_id == bot_id
+                    )
+                )
+                keys = dict(rows.all())
+        except (SQLAlchemyError, OSError):
+            if cached is None:
+                raise
+            log.warning("bot_keys_stale", bot_id=str(bot_id), exc_info=True)
+            return cached[1]
+        self._keys[bot_id] = (self._clock() + self._ttl, keys)
+        return keys
 
     async def _from_redis(self, bot_id: UUID) -> _Spec | None:
         try:

@@ -38,3 +38,9 @@ async def announce(redis: Redis, live: LiveBot) -> None:
 async def read(redis: Redis, bot_id: UUID) -> LiveBot | None:
     raw = await redis.get(live_key(bot_id))
     return None if raw is None else LiveBot.model_validate_json(raw)
+
+
+async def signal_changed(redis: Redis, bot_id: UUID) -> None:
+    """Make gateways drop what they cached for the bot (its live version and its provider
+    keys) without changing the live version itself, e.g. after a provider key changes."""
+    await redis.publish(PUBLISHED_CHANNEL, str(bot_id))

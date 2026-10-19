@@ -8,17 +8,20 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from cryptography.fernet import Fernet
 from fakeredis import FakeAsyncRedis
 from pydantic import SecretStr
 from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from gateway.bots import BotUnavailableError, Providers, PublishedBotLoader
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import live_bots
+from rozmova_core.credentials import CredentialCipher, CredentialError
 from rozmova_core.db import create_engine, create_session_factory
-from rozmova_core.models import Bot, BotVersion
+from rozmova_core.models import Bot, BotVersion, ProviderCredential
 from rozmova_core.settings import Settings
-from rozmova_engine.providers import ProviderConfig
+from rozmova_engine.providers import ProviderConfig, registry
 from rozmova_engine.providers.fake import FakeProvider
 
 DEMO_FLOW: dict[str, Any] = json.loads(
@@ -40,13 +43,16 @@ def greeting(runtime: Any) -> str:
 
 
 class FakeProviders(Providers):
-    """No real SDK clients: every provider name gets one fake."""
+    """No real SDK clients: every provider name gets one fake; ``keys`` records which
+    encrypted key each client was asked for."""
 
     def __init__(self) -> None:
         super().__init__({})
         self.fake = FakeProvider([])
+        self.keys: list[str | None] = []
 
-    def get(self, name: str) -> Any:
+    def get(self, name: str, ciphertext: str | None = None) -> Any:
+        self.keys.append(ciphertext)
         return self.fake
 
 
@@ -81,6 +87,15 @@ class Db:
             assert bot is not None
             bot.live_version_id = row.id
             return row
+
+    async def key(self, bot_id: UUID, ciphertext: str, provider: str = "openai") -> None:
+        async with self.factory() as db, db.begin():
+            await db.execute(delete(ProviderCredential).where(ProviderCredential.bot_id == bot_id))
+            db.add(
+                ProviderCredential(
+                    bot_id=bot_id, provider=provider, secret_ciphertext=ciphertext, last4="xxxx"
+                )
+            )
 
 
 @pytest.fixture
@@ -243,3 +258,109 @@ def test_providers_reuse_one_client_per_name() -> None:
     providers = Providers({"openai": ProviderConfig(api_key=SecretStr("sk-test"))})
 
     assert providers.get("openai") is providers.get("openai")
+
+
+def cipher() -> CredentialCipher:
+    return CredentialCipher(SecretStr(Fernet.generate_key().decode()))
+
+
+@pytest.mark.integration
+async def test_bot_key_reaches_the_provider(db: Db, loader: Loader) -> None:
+    pl, _ = loader
+    providers = pl._providers
+    assert isinstance(providers, FakeProviders)
+    with_key, without_key = await db.bot(), await db.bot()
+    for bot_id in (with_key, without_key):
+        await db.publish(bot_id, 1, flow("hi"))
+    await db.key(with_key, "ciphertext-1")
+    await db.key(without_key, "anthropic-key", provider="anthropic")  # not the bot's provider
+
+    await pl.load(with_key)
+    await pl.load(without_key)
+
+    assert providers.keys == ["ciphertext-1", None]
+
+
+@pytest.mark.integration
+async def test_changed_key_after_signal_or_ttl(db: Db, loader: Loader) -> None:
+    pl, clock = loader
+    providers = pl._providers
+    assert isinstance(providers, FakeProviders)
+    bot_id = await db.bot()
+    await db.publish(bot_id, 1, flow("hi"))
+    await db.key(bot_id, "old")
+    await pl.load(bot_id)
+
+    await db.key(bot_id, "new")
+    await pl.load(bot_id)  # cached
+    pl.invalidate(bot_id)
+    await pl.load(bot_id)
+    await db.key(bot_id, "newer")
+    clock.now += 31
+    await pl.load(bot_id)
+
+    assert providers.keys == ["old", "old", "new", "newer"]
+
+
+@pytest.mark.integration
+async def test_stale_key_serves_while_postgres_is_down(
+    db: Db, redis: FakeAsyncRedis, loader: Loader
+) -> None:
+    pl, clock = loader
+    providers = pl._providers
+    assert isinstance(providers, FakeProviders)
+    bot_id = await db.bot()
+    await db.key(bot_id, "ciphertext-1")
+    await announce(redis, bot_id, 1, flow("hi"))
+    await pl.load(bot_id)
+
+    clock.now += 31
+    await pl._engine.dispose()
+    pl._db = async_sessionmaker(
+        create_engine(Settings(database_url=SecretStr("postgresql+asyncpg://u:p@127.0.0.1:1/x")))
+    )
+    runtime = await pl.load(bot_id)
+
+    assert runtime is not None
+    assert providers.keys[-1] == "ciphertext-1"
+
+
+def test_providers_decrypt_the_bot_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    built: list[ProviderConfig] = []
+
+    def create(name: str, config: ProviderConfig) -> Any:
+        built.append(config)
+        return object()
+
+    monkeypatch.setattr(registry, "create", create)
+    box = cipher()
+    demo = ProviderConfig(api_key=SecretStr("sk-demo"), base_url="https://llm.example")
+    providers = Providers({"openai": demo}, box)
+    ciphertext = box.encrypt(SecretStr("sk-bot"))
+
+    own = providers.get("openai", ciphertext)
+    assert providers.get("openai", ciphertext) is own
+    assert providers.get("openai") is not own
+
+    [bot_config, demo_config] = built
+    assert bot_config.api_key == SecretStr("sk-bot")
+    assert bot_config.base_url == "https://llm.example"
+    assert demo_config.api_key == SecretStr("sk-demo")
+
+
+def test_providers_without_master_key_use_the_demo_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    built: list[ProviderConfig] = []
+    monkeypatch.setattr(registry, "create", lambda _, config: built.append(config))
+    providers = Providers({"openai": ProviderConfig(api_key=SecretStr("sk-demo"))})
+
+    providers.get("openai", "some-ciphertext")
+
+    assert [c.api_key for c in built] == [SecretStr("sk-demo")]
+
+
+def test_undecryptable_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(registry, "create", lambda *_: object())
+    providers = Providers({}, cipher())
+
+    with pytest.raises(CredentialError):
+        providers.get("openai", cipher().encrypt(SecretStr("sk-bot")))
