@@ -264,6 +264,191 @@
         }
       }
     },
+    "/calls": {
+      "get": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "List Calls",
+        "operationId": "list_calls_calls_get",
+        "parameters": [
+          {
+            "name": "bot_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bot Id"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "hangup",
+                    "timeout",
+                    "shutdown",
+                    "limit",
+                    "handoff",
+                    "completed",
+                    "open"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Started at or after",
+              "title": "Since"
+            },
+            "description": "Started at or after"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Started before",
+              "title": "Until"
+            },
+            "description": "Started before"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/calls/{call_id}": {
+      "get": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "Read Call",
+        "description": "The call and its events in order: messages, nodes, tools, timings, errors.",
+        "operationId": "read_call_calls__call_id__get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Call Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/bots": {
       "get": {
         "tags": [
@@ -1075,6 +1260,242 @@
           "created_at"
         ],
         "title": "BotOut"
+      },
+      "CallDetailOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "bot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bot Id"
+          },
+          "bot_name": {
+            "type": "string",
+            "title": "Bot Name"
+          },
+          "bot_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Version"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "caller": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caller"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/CallEventOut"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "bot_id",
+          "bot_name",
+          "bot_version",
+          "started_at",
+          "ended_at",
+          "outcome",
+          "caller",
+          "turns",
+          "events"
+        ],
+        "title": "CallDetailOut"
+      },
+      "CallEventOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ts",
+          "type",
+          "payload"
+        ],
+        "title": "CallEventOut"
+      },
+      "CallOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "bot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bot Id"
+          },
+          "bot_name": {
+            "type": "string",
+            "title": "Bot Name"
+          },
+          "bot_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Version"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "caller": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caller"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "bot_id",
+          "bot_name",
+          "bot_version",
+          "started_at",
+          "ended_at",
+          "outcome",
+          "caller",
+          "turns"
+        ],
+        "title": "CallOut"
+      },
+      "CallPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "CallPage"
       },
       "ConditionCase": {
         "properties": {

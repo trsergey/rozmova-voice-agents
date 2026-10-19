@@ -127,6 +127,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Calls */
+        get: operations["list_calls_calls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calls/{call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Call
+         * @description The call and its events in order: messages, nodes, tools, timings, errors.
+         */
+        get: operations["read_call_calls__call_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bots": {
         parameters: {
             query?: never;
@@ -417,6 +454,91 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** CallDetailOut */
+        CallDetailOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Bot Id
+             * Format: uuid
+             */
+            bot_id: string;
+            /** Bot Name */
+            bot_name: string;
+            /** Bot Version */
+            bot_version: number | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at: string | null;
+            /** Outcome */
+            outcome: string | null;
+            /** Caller */
+            caller: string | null;
+            /** Turns */
+            turns: number;
+            /** Events */
+            events: components["schemas"]["CallEventOut"][];
+        };
+        /** CallEventOut */
+        CallEventOut: {
+            /** Id */
+            id: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Type */
+            type: string;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /** CallOut */
+        CallOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Bot Id
+             * Format: uuid
+             */
+            bot_id: string;
+            /** Bot Name */
+            bot_name: string;
+            /** Bot Version */
+            bot_version: number | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at: string | null;
+            /** Outcome */
+            outcome: string | null;
+            /** Caller */
+            caller: string | null;
+            /** Turns */
+            turns: number;
+        };
+        /** CallPage */
+        CallPage: {
+            /** Items */
+            items: components["schemas"]["CallOut"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** ConditionCase */
         ConditionCase: {
@@ -1124,6 +1246,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TicketOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_calls_calls_get: {
+        parameters: {
+            query?: {
+                bot_id?: string | null;
+                outcome?: ("hangup" | "timeout" | "shutdown" | "limit" | "handoff" | "completed" | "open") | null;
+                /** @description Started at or after */
+                since?: string | null;
+                /** @description Started before */
+                until?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_call_calls__call_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallDetailOut"];
                 };
             };
             /** @description Validation Error */

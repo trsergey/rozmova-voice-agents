@@ -1,6 +1,6 @@
 """FastAPI app of the admin API: health check, auth, access codes, call tickets, bots,
-drafts, publish and rollback, provider keys, the knowledge base; version history and call
-logs come with their tickets. It also serves the built admin-web (``spa``), and persists the
+drafts, publish and rollback, provider keys, the knowledge base and the call log; version
+history comes with its ticket. It also serves the built admin-web (``spa``), and persists the
 gateway's call events into the call log in the background (ROZ-62)."""
 
 from collections.abc import AsyncIterator
@@ -10,7 +10,18 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from admin_api import access_codes, auth, bots, calls, credentials, errors, kb, publishing, spa
+from admin_api import (
+    access_codes,
+    auth,
+    bots,
+    call_history,
+    calls,
+    credentials,
+    errors,
+    kb,
+    publishing,
+    spa,
+)
 from admin_api.call_log import start_call_log, stop_call_log
 from admin_api.seed import seed_admin, seed_demo_bot
 from admin_api.sessions import SessionStore
@@ -52,6 +63,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.include_router(access_codes.login_router)
     app.include_router(access_codes.router)
     app.include_router(calls.router)
+    app.include_router(call_history.router)
     app.include_router(bots.router)
     app.include_router(bots.providers_router)
     app.include_router(publishing.router)
