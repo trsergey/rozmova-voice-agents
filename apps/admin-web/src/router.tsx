@@ -3,6 +3,8 @@
 import { Navigate, type RouteObject } from "react-router";
 
 import { AdminLayout } from "./admin/AdminLayout";
+import { BotPage } from "./admin/bots/BotPage";
+import { BotsPage } from "./admin/bots/BotsPage";
 import { RequireAdmin, RequireSession } from "./admin/guards";
 import { LoginPage } from "./admin/LoginPage";
 import { NotFound, Placeholder } from "./admin/Placeholder";
@@ -19,7 +21,8 @@ export const routes: RouteObject[] = [
         element: <AdminLayout />,
         children: [
           { index: true, element: <Navigate to="bots" replace /> },
-          { path: "bots/*", element: <Placeholder title="Боти" ticket="ROZ-47" /> },
+          { path: "bots", element: <BotsPage /> },
+          { path: "bots/:botId", element: <BotPage /> },
           { path: "calls/*", element: <Placeholder title="Дзвінки" ticket="ROZ-75" /> },
           { path: "kb", element: <Placeholder title="База знань" ticket="ROZ-76" /> },
           {

@@ -53,6 +53,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.include_router(access_codes.router)
     app.include_router(calls.router)
     app.include_router(bots.router)
+    app.include_router(bots.providers_router)
     app.include_router(publishing.router)
     app.include_router(credentials.router)
     app.include_router(kb.router)

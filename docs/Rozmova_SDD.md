@@ -348,7 +348,7 @@ WHERE v.flow @> '{"nodes": [{"data": {"tools": ["activate_service"]}}]}';
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Вхід адміна, сесійна cookie (httpOnly); `login` і `me` повертають роль і CSRF-токен | FR-14 |
 | `POST /auth/access-code` | Вхід за кодом доступу → сесія з роллю `viewer`, прив'язана до коду; оновлює `last_used_at` | FR-14 |
 | `POST /calls/ticket` | Короткоживучий підписаний тікет для WebSocket гейтвея (`bot_id`, `call_id`, `debug`); повертає готовий `ws_url`. `user_id` у тікеті — `user:<id>` або `code:<id>`, тож усі з одним кодом ділять його ліміти; `debug` лише для `admin`; переданий `call_id` — перепідключення (FR-21) | FR-14 |
-| `GET /bots`, `POST /bots`, `GET /bots/{id}` | Список, створення (лише `admin`; провайдер — з реєстру engine) і картка бота | FR-12 |
+| `GET /bots`, `POST /bots`, `GET /bots/{id}`, `GET /providers` | Список, створення (лише `admin`; провайдер — з реєстру engine, `GET /providers`) і картка бота з підсумком останнього eval по чернетці (`last_eval`, `current` — чи чернетка не змінилась після прогону) | FR-12 |
 | `GET /bots/{id}/draft`, `PUT /bots/{id}/draft` | Чернетка: читання й збереження на місці (лише `admin`). Перевіряється тільки форма `FlowGraph`, тож незавершений флоу зберігається; відповідь містить `hash` — SHA-256 логіки флоу без `ui` і без урахування порядку вузлів і ребер | FR-7 |
 | `GET /bots/{id}/versions`, `GET /bots/{id}/versions/{a}/diff/{b}` | Історія версій і дифф | FR-12 |
 | `POST /bots/{id}/validate` | Валідація збереженої чернетки: `{errors, warnings}` з `node_id`; доступна й `viewer`, бо нічого не змінює | FR-9 |

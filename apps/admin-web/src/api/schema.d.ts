@@ -200,6 +200,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Providers
+         * @description The LLM providers a bot may use: the engine's registry.
+         */
+        get: operations["list_providers_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bots/{bot_id}/publish": {
         parameters: {
             query?: never;
@@ -338,6 +358,32 @@ export interface components {
             /** Last Used At */
             last_used_at: string | null;
         };
+        /** BotDetailOut */
+        BotDetailOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Live Version Id */
+            live_version_id: string | null;
+            /** Live Version */
+            live_version?: number | null;
+            /** Draft Updated At */
+            draft_updated_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            last_eval?: components["schemas"]["EvalSummaryOut"] | null;
+        };
         /** BotIn */
         BotIn: {
             /** Name */
@@ -469,6 +515,22 @@ export interface components {
              */
             type: "end";
             data: components["schemas"]["EndData"];
+        };
+        /** EvalSummaryOut */
+        EvalSummaryOut: {
+            /** Passed */
+            passed: boolean;
+            /** Cases */
+            cases: number;
+            /** Cases Passed */
+            cases_passed: number;
+            /**
+             * Finished At
+             * Format: date-time
+             */
+            finished_at: string;
+            /** Current */
+            current: boolean;
         };
         /** FlowGraph */
         FlowGraph: {
@@ -1145,7 +1207,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BotOut"];
+                    "application/json": components["schemas"]["BotDetailOut"];
                 };
             };
             /** @description Validation Error */
@@ -1252,6 +1314,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_providers_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
         };

@@ -353,7 +353,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BotOut"
+                  "$ref": "#/components/schemas/BotDetailOut"
                 }
               }
             }
@@ -502,6 +502,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/providers": {
+      "get": {
+        "tags": [
+          "bots"
+        ],
+        "summary": "List Providers",
+        "description": "The LLM providers a bot may use: the engine's registry.",
+        "operationId": "list_providers_providers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List Providers Providers Get"
                 }
               }
             }
@@ -869,6 +895,88 @@
         ],
         "title": "AccessCodeOut"
       },
+      "BotDetailOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "live_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Version Id"
+          },
+          "live_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Version"
+          },
+          "draft_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Updated At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_eval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "model",
+          "live_version_id",
+          "draft_updated_at",
+          "created_at"
+        ],
+        "title": "BotDetailOut"
+      },
       "BotIn": {
         "properties": {
           "name": {
@@ -1208,6 +1316,40 @@
         ],
         "title": "EndNode",
         "description": "Says farewell and ends the call."
+      },
+      "EvalSummaryOut": {
+        "properties": {
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "cases": {
+            "type": "integer",
+            "title": "Cases"
+          },
+          "cases_passed": {
+            "type": "integer",
+            "title": "Cases Passed"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "current": {
+            "type": "boolean",
+            "title": "Current"
+          }
+        },
+        "type": "object",
+        "required": [
+          "passed",
+          "cases",
+          "cases_passed",
+          "finished_at",
+          "current"
+        ],
+        "title": "EvalSummaryOut"
       },
       "FlowGraph": {
         "properties": {

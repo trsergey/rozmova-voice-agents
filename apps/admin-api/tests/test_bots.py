@@ -1,9 +1,12 @@
 """Bots, the in-place draft and validation against a migrated PostgreSQL."""
 
+import asyncio
 import json
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
@@ -17,6 +20,7 @@ from admin_api.sessions import CSRF_HEADER
 from rozmova_core.db import create_engine, create_session_factory
 from rozmova_core.models import Bot, User
 from rozmova_core.settings import Settings
+from rozmova_engine.evals.report import EvalReport, Summary
 
 DEMO_FLOW: dict[str, Any] = json.loads(
     (Path(__file__).resolve().parents[3] / "flows/hvylia-demo.json").read_text(encoding="utf-8")
@@ -86,7 +90,7 @@ def test_create_list_get(clients: tuple[Client, Client]) -> None:
     assert bot["live_version_id"] is None
     assert bot["draft_updated_at"] is None
     assert [b["id"] for b in viewer.http.get("/bots").json()] == [bot["id"]]
-    assert viewer.http.get(f"/bots/{bot['id']}").json() == bot
+    assert viewer.http.get(f"/bots/{bot['id']}").json() == bot | {"last_eval": None}
 
     missing = viewer.http.get("/bots/00000000-0000-0000-0000-000000000000")
     assert missing.status_code == 404
@@ -192,3 +196,72 @@ def test_viewer_cannot_create_or_save(clients: tuple[Client, Client]) -> None:
 def test_bots_need_a_session(settings: Settings) -> None:
     with Client(settings, FakeServer()).http as http:
         assert http.get("/bots").status_code == 401
+
+
+def _report(passed: bool, cases_passed: int) -> dict[str, Any]:
+    started = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+    report = EvalReport(
+        started_at=started,
+        finished_at=started + timedelta(minutes=3),
+        flow="draft",
+        provider="openai",
+        model="gpt-4.1-mini",
+        judge_model=None,
+        subset="full",
+        summary=Summary(
+            passed=passed,
+            cases=50,
+            cases_passed=cases_passed,
+            gates=[],
+            by_tag={},
+            input_tokens=0,
+            output_tokens=0,
+            judge_cost_usd=None,
+            judge_errors=0,
+        ),
+        cases=[],
+    )
+    return report.model_dump(mode="json")
+
+
+async def _store_report(settings: Settings, bot_id: str, stored: dict[str, Any] | None) -> None:
+    engine = create_engine(settings)
+    async with create_session_factory(engine)() as db, db.begin():
+        bot = await db.get(Bot, UUID(bot_id))
+        assert bot is not None
+        bot.draft_eval_report = stored
+    await engine.dispose()
+
+
+@pytest.mark.integration
+def test_bot_card_shows_the_last_eval(clients: tuple[Client, Client], settings: Settings) -> None:
+    admin, viewer = clients
+    bot = _create_bot(admin)
+    url = f"/bots/{bot['id']}"
+    draft_hash = admin.http.put(f"{url}/draft", json=DEMO_FLOW).json()["hash"]
+
+    stored = {"draft_hash": draft_hash, "report": _report(passed=True, cases_passed=50)}
+    asyncio.run(_store_report(settings, bot["id"], stored))
+    last_eval = viewer.http.get(url).json()["last_eval"]
+    assert last_eval == {
+        "passed": True,
+        "cases": 50,
+        "cases_passed": 50,
+        "finished_at": "2026-10-19T12:03:00Z",
+        "current": True,
+    }
+
+    changed = {**DEMO_FLOW, "edges": DEMO_FLOW["edges"][:-1]}
+    admin.http.put(f"{url}/draft", json=changed)
+    assert viewer.http.get(url).json()["last_eval"]["current"] is False
+
+    asyncio.run(_store_report(settings, bot["id"], {"draft_hash": "x", "report": {"bad": 1}}))
+    assert viewer.http.get(url).json()["last_eval"] is None
+
+
+@pytest.mark.integration
+def test_providers_come_from_the_engine(clients: tuple[Client, Client]) -> None:
+    _, viewer = clients
+
+    expected = ["anthropic", "azure_openai", "openai", "openrouter"]
+    assert viewer.http.get("/providers").json() == expected

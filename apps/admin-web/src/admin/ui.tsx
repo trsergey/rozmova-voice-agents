@@ -1,5 +1,5 @@
 // The few styled primitives the admin pages share; Radix covers the interactive widgets.
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 
 const buttonVariants = {
   primary: "bg-accent text-accent-fg hover:bg-accent/90",
@@ -28,6 +28,33 @@ export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInpu
       {...props}
     />
   );
+}
+
+export function Select({ className = "", ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      className={`w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function Card({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-lg border border-line bg-surface p-4">
+      <h2 className="mb-3 text-sm font-medium text-fg-muted">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+export function Badge({ tone, children }: { tone: "ok" | "bad" | "neutral"; children: ReactNode }) {
+  const tones = {
+    ok: "bg-ok-bg text-ok-fg",
+    bad: "bg-danger/10 text-danger",
+    neutral: "bg-muted-bg text-fg-muted",
+  };
+  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
 }
 
 export function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {

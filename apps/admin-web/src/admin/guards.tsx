@@ -1,5 +1,6 @@
 // Route guards: RequireSession sends anonymous visitors to the login page and back after;
-// RequireAdmin closes admin-only pages to viewers.
+// RequireAdmin closes admin-only pages to viewers; AdminOnly hides admin-only controls.
+import type { ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 
 import { SessionContext, useCanEdit, useSession } from "./session";
@@ -31,4 +32,8 @@ export function RequireAdmin() {
     );
   }
   return <Outlet />;
+}
+
+export function AdminOnly({ children }: { children: ReactNode }) {
+  return useCanEdit() ? children : null;
 }
