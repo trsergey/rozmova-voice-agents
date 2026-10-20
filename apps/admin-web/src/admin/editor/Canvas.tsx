@@ -144,7 +144,9 @@ export function Canvas({ editable, activeNodeId = null }: { editable: boolean; a
       deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
       colorMode="system"
       fitView
-      fitViewOptions={{ padding: 0.2 }}
+      // Never fit by shrinking the nodes below readable: a wide flow opens at its left part
+      // and the minimap shows the rest.
+      fitViewOptions={{ padding: 0.15, minZoom: 0.8 }}
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
     >

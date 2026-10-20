@@ -44,7 +44,7 @@
 .demo .login { display: grid; gap: 8px; max-width: 360px; margin: 0 auto; }
 .demo input { font: inherit; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); min-width: 0; }
 .demo button { font: inherit; padding: 10px 16px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
-.demo button:disabled { opacity: 0.5; cursor: default; }
+.demo button:disabled { background: var(--bot); color: var(--muted); cursor: default; }
 .demo button.link { background: none; color: var(--accent); padding: 0; }
 .demo .error { color: var(--error); margin: 0; }
 .demo .chat { display: flex; flex-direction: column; gap: 12px; min-height: 60vh; }

@@ -41,6 +41,23 @@
   color-scheme: light dark;
 }
 
+/* The editor canvas: edges and their route labels in the theme's colours, strong enough to
+   follow on the dotted background. */
+.react-flow {
+  --xy-edge-stroke-default: var(--color-fg-muted);
+  --xy-edge-stroke-width-default: 1.5;
+  --xy-edge-label-color-default: var(--color-fg);
+  --xy-edge-label-background-color-default: var(--color-surface);
+}
+
+/* A strip that scrolls sideways (the section nav on a phone) without a visible scrollbar. */
+.scroll-quiet {
+  scrollbar-width: none;
+}
+.scroll-quiet::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   background: var(--color-page);
   color: var(--color-fg);

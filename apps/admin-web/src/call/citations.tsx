@@ -31,7 +31,7 @@ export function withSuperscripts(text: string, sources: Source[] = []): ReactNod
     const numbers = (match[1] ?? "").split(",").map((n) => Number(n.trim()));
     for (const n of numbers) {
       parts.push(
-        <sup key={`${match.index}-${n}`} className="ml-px text-[0.7em] font-medium text-accent" title={titles.get(n)}>
+        <sup key={`${match.index}-${n}`} className="ml-px text-[0.85em] font-medium text-accent" title={titles.get(n)}>
           {n}
         </sup>,
       );

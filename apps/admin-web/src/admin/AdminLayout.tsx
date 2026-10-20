@@ -34,7 +34,7 @@ export function AdminLayout() {
       <div className="flex flex-1 flex-col md:flex-row">
         <nav
           aria-label="Розділи"
-          className="flex gap-1 overflow-x-auto border-b border-line px-2 py-2 md:w-52 md:shrink-0 md:flex-col md:border-r md:border-b-0 md:py-4"
+          className="scroll-quiet flex gap-1 overflow-x-auto border-b border-line px-2 py-2 md:w-52 md:shrink-0 md:flex-col md:border-r md:border-b-0 md:py-4"
         >
           {NAV.filter((item) => canEdit || !item.adminOnly).map((item) => (
             <NavLink
@@ -64,6 +64,9 @@ function UserMenu() {
       <DropdownMenu.Trigger aria-label={`${session.user.name}, меню`} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted-bg">
         <span className="hidden max-w-64 truncate sm:inline">{session.user.name}</span>
         <span className="rounded bg-muted-bg px-1.5 py-0.5 text-xs text-fg-muted">{role}</span>
+        <span aria-hidden="true" className="text-xs text-fg-muted">
+          ▾
+        </span>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content

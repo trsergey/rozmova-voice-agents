@@ -58,10 +58,10 @@ export function BotPage() {
       </div>
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <PublishCard bot={bot.data} />
-        <VersionsCard botId={botId} />
-      </div>
-      <div className="mt-6 max-w-xl">
         <Credentials botId={botId} botProvider={bot.data.provider} />
+      </div>
+      <div className="mt-6">
+        <VersionsCard botId={botId} />
       </div>
     </>
   );

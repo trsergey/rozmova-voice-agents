@@ -1,10 +1,12 @@
 // The few styled primitives the admin pages share; Radix covers the interactive widgets.
+// A disabled button is grey on grey rather than a faded colour button, so it reads as
+// "not now" and its text stays legible.
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 
 const buttonVariants = {
-  primary: "bg-accent text-accent-fg hover:bg-accent/90",
-  secondary: "border border-line bg-surface text-fg hover:bg-muted-bg",
-  ghost: "text-fg-muted hover:bg-muted-bg hover:text-fg",
+  primary: "bg-accent text-accent-fg enabled:hover:bg-accent/90",
+  secondary: "border border-line bg-surface text-fg enabled:hover:bg-muted-bg",
+  ghost: "text-fg-muted enabled:hover:bg-muted-bg enabled:hover:text-fg",
 };
 
 export function Button({
@@ -15,7 +17,7 @@ export function Button({
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center gap-2 rounded-md whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50 ${buttonVariants[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-md whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:border disabled:border-line disabled:bg-muted-bg disabled:text-fg-muted ${buttonVariants[variant]} ${className}`}
       {...props}
     />
   );

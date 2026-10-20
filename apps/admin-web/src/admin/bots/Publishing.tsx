@@ -10,6 +10,7 @@ import { NODE_KINDS, type NodeType } from "../editor/graph";
 import { formatDateTime } from "../format";
 import { AdminOnly } from "../guards";
 import { Badge, Button, Card, ErrorText, Field, Input } from "../ui";
+import { wordDiff } from "./wordDiff";
 import {
   useDiff,
   useEvalJob,
@@ -277,8 +278,7 @@ export function DiffView({ diff }: { diff: FlowDiff }) {
                       <div key={change.path} className="grid gap-1 sm:grid-cols-[10rem_1fr]">
                         <dt className="font-mono text-fg-muted">{change.path}</dt>
                         <dd className="grid gap-1">
-                          <Value tone="before" value={change.before} />
-                          <Value tone="after" value={change.after} />
+                          <Change before={change.before} after={change.after} />
                         </dd>
                       </div>
                     ))}
@@ -316,6 +316,37 @@ export function DiffView({ diff }: { diff: FlowDiff }) {
         </section>
       )}
     </div>
+  );
+}
+
+// Two texts as one word diff; anything else (lists, numbers, a field that appeared) as the
+// old and the new value.
+function Change({ before, after }: { before: unknown; after: unknown }) {
+  const pieces = typeof before === "string" && typeof after === "string" ? wordDiff(before, after) : null;
+  if (!pieces) {
+    return (
+      <>
+        <Value tone="before" value={before} />
+        <Value tone="after" value={after} />
+      </>
+    );
+  }
+  return (
+    <p className="rounded bg-muted-bg px-2 py-1 font-mono text-xs whitespace-pre-wrap break-words" aria-label="зміни в тексті">
+      {pieces.map((piece, index) =>
+        piece.kind === "removed" ? (
+          <del key={index} className="rounded-sm bg-danger/10 text-danger">
+            {piece.text}
+          </del>
+        ) : piece.kind === "added" ? (
+          <ins key={index} className="rounded-sm bg-ok-bg text-ok-fg no-underline">
+            {piece.text}
+          </ins>
+        ) : (
+          <span key={index}>{piece.text}</span>
+        ),
+      )}
+    </p>
   );
 }
 

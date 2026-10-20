@@ -5,7 +5,7 @@
 // checked by the same schemas. The validator's issues for the node show under their field.
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   useFieldArray,
   useForm,
@@ -216,11 +216,21 @@ function LLMPromptForm({ node, issues }: { node: Extract<FlowNode, { type: "llm_
   const form = useNodeForm(node, llmValues, llmToData, LLMPromptDataSchema);
   const routes = useFieldArray({ control: form.control, name: "routes" });
   const id = (field: string) => `${node.id}-${field}`;
+  // A prompt is tens of lines; the panel is narrow, so it can open taller.
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <>
       <Row label="Промпт вузла" htmlFor={id("prompt")} server={onField(issues, "prompt")}>
-        <textarea id={id("prompt")} rows={7} className={textarea} {...form.register("prompt")} />
+        <textarea
+          id={id("prompt")}
+          rows={expanded ? 30 : 12}
+          className={`${textarea} resize-y`}
+          {...form.register("prompt")}
+        />
+        <button type="button" className="justify-self-start text-xs text-accent hover:underline" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Згорнути" : "Розгорнути"}
+        </button>
       </Row>
       <fieldset className="grid gap-1">
         <legend className="mb-1 text-xs font-medium">Дії, які може викликати модель</legend>

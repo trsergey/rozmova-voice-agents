@@ -212,8 +212,9 @@ test("the diff page lists changed nodes and edges", async () => {
 
   expect(await screen.findByRole("heading", { name: "Зміни v2 → v3" })).toBeInTheDocument();
   expect(await screen.findByText("data.greeting")).toBeInTheDocument();
-  expect(screen.getByLabelText("було")).toHaveTextContent("Вітаю!");
-  expect(screen.getByLabelText("стало")).toHaveTextContent("Привіт!");
+  const text = screen.getByLabelText("зміни в тексті");
+  expect(within(text).getByRole("deletion")).toHaveTextContent("Вітаю!");
+  expect(within(text).getByRole("insertion")).toHaveTextContent("Привіт!");
   expect(screen.getByText("promo")).toBeInTheDocument();
   expect(screen.getByText("operator", { selector: "s" })).toBeInTheDocument();
 });

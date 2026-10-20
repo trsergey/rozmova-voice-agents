@@ -43,7 +43,7 @@ export function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
         <div className="flex justify-around gap-1 border-t border-line px-2 pt-1 pb-2">
           {exits.map((exit) => (
             <div key={exit.id} className="relative flex min-w-0 flex-col items-center">
-              {exit.label && <span className="max-w-24 truncate text-[10px] text-fg-muted">{exit.label}</span>}
+              {exit.label && <span className="max-w-24 truncate text-xs text-fg-muted">{exit.label}</span>}
               <Handle
                 id={exit.id}
                 type="source"
