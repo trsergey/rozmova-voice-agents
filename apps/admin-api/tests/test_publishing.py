@@ -257,3 +257,101 @@ async def test_concurrent_publish_and_rollback_get_consecutive_versions(
     assert [r.status_code for r in results] == [201, 201]
     assert sorted(r.json()["version"] for r in results) == [3, 4]
     assert await _versions(setup.settings, bot_id) == 4
+
+
+def without_tool(tool: str) -> dict[str, Any]:
+    """The demo flow whose LLM node no longer offers ``tool``."""
+    flow = copy.deepcopy(DEMO_FLOW)
+    [assist] = [n for n in flow["nodes"] if n["id"] == "assist"]
+    assist["data"]["tools"] = [t for t in assist["data"]["tools"] if t != tool]
+    return flow
+
+
+@pytest.mark.integration
+def test_versions_newest_first_with_author_and_live(setup: Setup) -> None:
+    bot_id = setup.new_bot(DEMO_FLOW)
+    setup.publish(bot_id, note="first")
+    setup.save_draft(bot_id, with_greeting("Привіт!"))
+    setup.publish(bot_id)
+    setup.admin.http.post(f"/bots/{bot_id}/rollback/1")
+
+    response = setup.viewer.http.get(f"/bots/{bot_id}/versions")
+
+    assert response.status_code == 200, response.text
+    versions = response.json()
+    assert [(v["version"], v["note"], v["live"]) for v in versions] == [
+        (3, "rollback of v1", True),
+        (2, None, False),
+        (1, "first", False),
+    ]
+    assert {v["created_by_email"] for v in versions} == {ADMIN["email"]}
+    assert setup.viewer.http.get(f"/bots/{setup.new_bot()}/versions").json() == []
+
+
+@pytest.mark.integration
+def test_diff_between_versions_and_against_the_draft(setup: Setup) -> None:
+    bot_id = setup.new_bot(DEMO_FLOW)
+    setup.publish(bot_id)
+    setup.save_draft(bot_id, with_greeting("Привіт!"))
+    setup.publish(bot_id)
+    # Moving nodes on the canvas is not a change.
+    moved = with_greeting("Привіт!")
+    for node in moved["nodes"]:
+        node["ui"] = {"x": 1, "y": 2}
+    setup.save_draft(bot_id, moved)
+
+    between = setup.viewer.http.get(f"/bots/{bot_id}/versions/1/diff/2")
+    to_draft = setup.viewer.http.get(f"/bots/{bot_id}/versions/2/diff/draft")
+
+    assert between.status_code == 200, between.text
+    body = between.json()
+    assert (body["before"], body["after"]) == (1, 2)
+    [start] = body["diff"]["nodes"]
+    assert (start["id"], start["status"]) == ("start", "changed")
+    assert [(c["path"], c["after"]) for c in start["changes"]] == [("data.greeting", "Привіт!")]
+    assert body["diff"]["edges"] == []
+    assert to_draft.json() == {"before": 2, "after": None, "diff": {"nodes": [], "edges": []}}
+
+
+@pytest.mark.integration
+def test_diff_of_a_missing_version_is_404_and_a_bad_target_422(setup: Setup) -> None:
+    bot_id = setup.new_bot(DEMO_FLOW)
+    setup.publish(bot_id)
+
+    missing = setup.viewer.http.get(f"/bots/{bot_id}/versions/1/diff/5")
+    bad = setup.viewer.http.get(f"/bots/{bot_id}/versions/1/diff/latest")
+
+    assert (missing.status_code, missing.json()["error"]["code"]) == (404, "version_not_found")
+    assert bad.status_code == 422
+
+
+@pytest.mark.integration
+def test_usages_find_versions_drafts_and_tool_nodes(setup: Setup) -> None:
+    support = setup.new_bot(DEMO_FLOW)
+    setup.publish(support)  # v1 offers activate_service
+    setup.save_draft(support, without_tool("activate_service"))
+    setup.publish(support)  # v2, live and the draft do not
+    other = setup.new_bot(without_tool("activate_service"))
+    # A deterministic tool node in a draft that was never published.
+    tool_node = {
+        "nodes": [{"id": "act", "type": "tool", "data": {"tool": "activate_service"}}],
+        "edges": [],
+    }
+    with_node = setup.new_bot(tool_node)
+
+    found = setup.viewer.http.get("/search/usages", params={"tool": "activate_service"})
+    balance = setup.viewer.http.get("/search/usages", params={"tool": "get_balance"})
+    nowhere = setup.viewer.http.get("/search/usages", params={"tool": "send_sms"})
+
+    assert found.status_code == 200, found.text
+    usages = {u["bot_id"]: u for u in found.json()}
+    assert usages.keys() == {support, with_node}
+    assert (usages[support]["versions"], usages[support]["live"], usages[support]["draft"]) == (
+        [1],
+        False,
+        False,
+    )
+    assert (usages[with_node]["versions"], usages[with_node]["draft"]) == ([], True)
+    assert {u["bot_id"]: u["versions"] for u in balance.json()} == {support: [2, 1], other: []}
+    assert nowhere.json() == []
+    assert setup.viewer.http.get("/search/usages").status_code == 422

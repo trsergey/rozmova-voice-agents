@@ -23,6 +23,7 @@ from admin_api import (
     ops,
     publishing,
     spa,
+    usages,
 )
 from admin_api.call_log import start_call_log, stop_call_log
 from admin_api.seed import seed_admin, seed_demo_bot
@@ -70,6 +71,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.include_router(bots.router)
     app.include_router(bots.providers_router)
     app.include_router(publishing.router)
+    app.include_router(usages.router)
     app.include_router(credentials.router)
     app.include_router(kb.router)
     app.include_router(ops.router)

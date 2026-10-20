@@ -277,6 +277,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bots/{bot_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Versions
+         * @description The bot's versions, newest first.
+         */
+        get: operations["list_versions_bots__bot_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bots/{bot_id}/versions/{a}/diff/{b}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diff Versions
+         * @description What changes from version ``a`` to version ``b`` (or the draft): nodes and edges,
+         *     without canvas positions.
+         */
+        get: operations["diff_versions_bots__bot_id__versions__a__diff__b__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bots/{bot_id}/publish": {
         parameters: {
             query?: never;
@@ -305,6 +346,26 @@ export interface paths {
         put?: never;
         /** Rollback */
         post: operations["rollback_bots__bot_id__rollback__version__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/search/usages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tool Usages
+         * @description Bots whose versions or draft use ``tool``, by bot name.
+         */
+        get: operations["tool_usages_search_usages_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -650,6 +711,22 @@ export interface components {
             target: string;
             when?: components["schemas"]["EdgeWhen"] | null;
         };
+        /** EdgeDiff */
+        EdgeDiff: {
+            /** Source */
+            source: string;
+            /** Route */
+            route: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "added" | "removed" | "changed";
+            /** Target Before */
+            target_before?: string | null;
+            /** Target After */
+            target_after?: string | null;
+        };
         /** EdgeWhen */
         EdgeWhen: {
             /** Route */
@@ -690,6 +767,26 @@ export interface components {
             finished_at: string;
             /** Current */
             current: boolean;
+        };
+        /** FieldChange */
+        FieldChange: {
+            /** Path */
+            path: string;
+            before?: components["schemas"]["JsonValue"];
+            after?: components["schemas"]["JsonValue"];
+        };
+        /** FlowDiff */
+        FlowDiff: {
+            /**
+             * Nodes
+             * @default []
+             */
+            nodes: components["schemas"]["NodeDiff"][];
+            /**
+             * Edges
+             * @default []
+             */
+            edges: components["schemas"]["EdgeDiff"][];
         };
         /** FlowGraph */
         FlowGraph: {
@@ -894,6 +991,23 @@ export interface components {
              */
             password: string;
         };
+        /** NodeDiff */
+        NodeDiff: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "added" | "removed" | "changed";
+            /**
+             * Changes
+             * @default []
+             */
+            changes: components["schemas"]["FieldChange"][];
+        };
         /**
          * NodeUI
          * @description Canvas position. Ignored by validation and by the version diff.
@@ -1052,6 +1166,22 @@ export interface components {
             /** Side Effect */
             side_effect: boolean;
         };
+        /** ToolUsageOut */
+        ToolUsageOut: {
+            /**
+             * Bot Id
+             * Format: uuid
+             */
+            bot_id: string;
+            /** Bot Name */
+            bot_name: string;
+            /** Versions */
+            versions: number[];
+            /** Live */
+            live: boolean;
+            /** Draft */
+            draft: boolean;
+        };
         /**
          * UserOut
          * @description ``id`` is the user's id, or the access code's id for a viewer who used a code.
@@ -1089,6 +1219,37 @@ export interface components {
             errors?: components["schemas"]["FlowIssue"][];
             /** Warnings */
             warnings?: components["schemas"]["FlowIssue"][];
+        };
+        /** VersionDiffOut */
+        VersionDiffOut: {
+            /** Before */
+            before: number;
+            /** After */
+            after: number | null;
+            diff: components["schemas"]["FlowDiff"];
+        };
+        /** VersionItemOut */
+        VersionItemOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Created By Email */
+            created_by_email: string | null;
+            /** Live */
+            live: boolean;
         };
         /** VersionOut */
         VersionOut: {
@@ -1650,6 +1811,71 @@ export interface operations {
             };
         };
     };
+    list_versions_bots__bot_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diff_versions_bots__bot_id__versions__a__diff__b__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+                a: number;
+                /** @description A version or `draft`. */
+                b: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionDiffOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     publish_bots__bot_id__publish_post: {
         parameters: {
             query?: never;
@@ -1704,6 +1930,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_usages_search_usages_get: {
+        parameters: {
+            query: {
+                tool: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolUsageOut"][];
                 };
             };
             /** @description Validation Error */

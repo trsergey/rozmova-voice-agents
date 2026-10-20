@@ -8,6 +8,9 @@ to, and the failure is logged.
 
 Rollback never moves the pointer back: it creates version n+1 with the old flow and a note,
 so the history shows every change of the live flow. It leaves the draft alone.
+
+Everyone logged in reads the history and the diff between two versions, or between a
+version and the draft (``…/diff/draft``: what the next publish would change; FR-12).
 """
 
 import uuid
@@ -15,20 +18,20 @@ from datetime import datetime
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from admin_api.auth import AdminOnly
+from admin_api.auth import AdminOnly, CurrentSession
 from admin_api.bots import KNOWN_TOOLS, draft_flow, get_bot
 from admin_api.errors import ApiError
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import live_bots
-from rozmova_core.models import Bot, BotVersion
-from rozmova_engine.flow import validate_flow
+from rozmova_core.models import Bot, BotVersion, User
+from rozmova_engine.flow import FlowDiff, diff_flows, validate_flow
 
 log = structlog.get_logger(__name__)
 
@@ -45,6 +48,17 @@ class VersionOut(BaseModel):
     note: str | None
     created_at: datetime
     created_by: uuid.UUID | None
+
+
+class VersionItemOut(VersionOut):
+    created_by_email: str | None
+    live: bool
+
+
+class VersionDiffOut(BaseModel):
+    before: int
+    after: int | None  # None: the draft
+    diff: FlowDiff
 
 
 def _db(request: Request) -> async_sessionmaker[AsyncSession]:
@@ -99,7 +113,64 @@ async def announce_live(redis: Redis, bot: Bot, version: BotVersion) -> None:
         log.exception("live_cache_write_failed", bot_id=str(bot.id), version=version.version)
 
 
+async def _version(db: AsyncSession, bot_id: uuid.UUID, version: int) -> BotVersion:
+    found = await db.scalar(
+        select(BotVersion).where(BotVersion.bot_id == bot_id, BotVersion.version == version)
+    )
+    if found is None:
+        raise ApiError(404, "version_not_found", f"Bot has no version {version}.")
+    return found
+
+
 router = APIRouter(prefix="/bots", tags=["versions"])
+
+
+@router.get("/{bot_id}/versions")
+async def list_versions(
+    bot_id: uuid.UUID, request: Request, _: CurrentSession
+) -> list[VersionItemOut]:
+    """The bot's versions, newest first."""
+    async with _db(request)() as db:
+        bot = await get_bot(db, bot_id)
+        rows = await db.execute(
+            select(BotVersion, User.email)
+            .outerjoin(User, User.id == BotVersion.created_by)
+            .where(BotVersion.bot_id == bot_id)
+            .order_by(BotVersion.version.desc())
+        )
+        return [
+            VersionItemOut(
+                id=version.id,
+                version=version.version,
+                note=version.note,
+                created_at=version.created_at,
+                created_by=version.created_by,
+                created_by_email=email,
+                live=version.id == bot.live_version_id,
+            )
+            for version, email in rows
+        ]
+
+
+@router.get("/{bot_id}/versions/{a}/diff/{b}")
+async def diff_versions(
+    bot_id: uuid.UUID,
+    a: int,
+    b: Annotated[str, Path(pattern=r"^([1-9][0-9]*|draft)$", description="A version or `draft`.")],
+    request: Request,
+    _: CurrentSession,
+) -> VersionDiffOut:
+    """What changes from version ``a`` to version ``b`` (or the draft): nodes and edges,
+    without canvas positions."""
+    async with _db(request)() as db:
+        bot = await get_bot(db, bot_id)
+        before = FlowGraph.model_validate((await _version(db, bot_id, a)).flow)
+        after_version = None if b == "draft" else int(b)
+        if after_version is None:
+            after = draft_flow(bot)
+        else:
+            after = FlowGraph.model_validate((await _version(db, bot_id, after_version)).flow)
+    return VersionDiffOut(before=a, after=after_version, diff=diff_flows(before, after))
 
 
 @router.post("/{bot_id}/publish", status_code=201)
@@ -130,11 +201,7 @@ async def rollback(
 ) -> VersionOut:
     async with _db(request)() as db, db.begin():
         bot = await get_bot(db, bot_id, for_update=True)
-        target = await db.scalar(
-            select(BotVersion).where(BotVersion.bot_id == bot_id, BotVersion.version == version)
-        )
-        if target is None:
-            raise ApiError(404, "version_not_found", f"Bot has no version {version}.")
+        target = await _version(db, bot_id, version)
         flow = FlowGraph.model_validate(target.flow)
         created = await make_live(db, bot, flow, f"rollback of v{version}", admin.user_id)
     await announce_live(request.app.state.redis, bot, created)

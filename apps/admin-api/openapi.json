@@ -746,6 +746,119 @@
         }
       }
     },
+    "/bots/{bot_id}/versions": {
+      "get": {
+        "tags": [
+          "versions"
+        ],
+        "summary": "List Versions",
+        "description": "The bot's versions, newest first.",
+        "operationId": "list_versions_bots__bot_id__versions_get",
+        "parameters": [
+          {
+            "name": "bot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Bot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VersionItemOut"
+                  },
+                  "title": "Response List Versions Bots  Bot Id  Versions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bots/{bot_id}/versions/{a}/diff/{b}": {
+      "get": {
+        "tags": [
+          "versions"
+        ],
+        "summary": "Diff Versions",
+        "description": "What changes from version ``a`` to version ``b`` (or the draft): nodes and edges,\nwithout canvas positions.",
+        "operationId": "diff_versions_bots__bot_id__versions__a__diff__b__get",
+        "parameters": [
+          {
+            "name": "bot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Bot Id"
+            }
+          },
+          {
+            "name": "a",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "A"
+            }
+          },
+          {
+            "name": "b",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9][0-9]*|draft)$",
+              "description": "A version or `draft`.",
+              "title": "B"
+            },
+            "description": "A version or `draft`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionDiffOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/bots/{bot_id}/publish": {
       "post": {
         "tags": [
@@ -834,6 +947,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VersionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search/usages": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Tool Usages",
+        "description": "Bots whose versions or draft use ``tool``, by bot name.",
+        "operationId": "tool_usages_search_usages_get",
+        "parameters": [
+          {
+            "name": "tool",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Tool"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolUsageOut"
+                  },
+                  "title": "Response Tool Usages Search Usages Get"
                 }
               }
             }
@@ -1722,6 +1884,64 @@
         "title": "Edge",
         "description": "A transition. Without ``when`` it is the node's unconditional edge."
       },
+      "EdgeDiff": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Status"
+          },
+          "target_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Before"
+          },
+          "target_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target After"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source",
+          "route",
+          "status"
+        ],
+        "title": "EdgeDiff"
+      },
       "EdgeWhen": {
         "properties": {
           "route": {
@@ -1818,6 +2038,49 @@
           "current"
         ],
         "title": "EvalSummaryOut"
+      },
+      "FieldChange": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "before": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "after": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "FieldChange"
+      },
+      "FlowDiff": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/NodeDiff"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/EdgeDiff"
+            },
+            "type": "array",
+            "title": "Edges",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FlowDiff"
       },
       "FlowGraph": {
         "properties": {
@@ -2294,6 +2557,43 @@
         ],
         "title": "LoginRequest"
       },
+      "NodeDiff": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Status"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/FieldChange"
+            },
+            "type": "array",
+            "title": "Changes",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "status"
+        ],
+        "title": "NodeDiff"
+      },
       "NodeUI": {
         "properties": {
           "x": {
@@ -2706,6 +3006,43 @@
         ],
         "title": "ToolOut"
       },
+      "ToolUsageOut": {
+        "properties": {
+          "bot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bot Id"
+          },
+          "bot_name": {
+            "type": "string",
+            "title": "Bot Name"
+          },
+          "versions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Versions"
+          },
+          "live": {
+            "type": "boolean",
+            "title": "Live"
+          },
+          "draft": {
+            "type": "boolean",
+            "title": "Draft"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bot_id",
+          "bot_name",
+          "versions",
+          "live",
+          "draft"
+        ],
+        "title": "ToolUsageOut"
+      },
       "UserOut": {
         "properties": {
           "id": {
@@ -2795,6 +3132,102 @@
         "type": "object",
         "title": "ValidationResult",
         "description": "Errors block publishing; warnings are shown in the editor only."
+      },
+      "VersionDiffOut": {
+        "properties": {
+          "before": {
+            "type": "integer",
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/FlowDiff"
+          }
+        },
+        "type": "object",
+        "required": [
+          "before",
+          "after",
+          "diff"
+        ],
+        "title": "VersionDiffOut"
+      },
+      "VersionItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Email"
+          },
+          "live": {
+            "type": "boolean",
+            "title": "Live"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "note",
+          "created_at",
+          "created_by",
+          "created_by_email",
+          "live"
+        ],
+        "title": "VersionItemOut"
       },
       "VersionOut": {
         "properties": {
