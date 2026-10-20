@@ -13,6 +13,12 @@ One background task in admin-api reads the stream with the consumer group ``pers
    stream entry id, so a redelivered entry is not stored twice.
 4. After the commit the entries are acknowledged (``XACK``) and published to ``calls:live``.
 
+A call whose connection closed without ``session_end`` (the subscriber closed the tab) may
+be resumed for 30 minutes (the gateway's session TTL), so its row stays open. Once a minute
+the consumer closes calls with no event for ``ABANDONED_AFTER``: ``ended_at`` is their last
+event and ``outcome`` is ``abandoned``. A live call cannot be that quiet: the session limit
+ends it after 10 minutes.
+
 The write of a batch is the span ``call_log.persist``, linked to the span of every event
 that came with a trace context, so a call's trace leads to where its events were stored.
 
@@ -25,8 +31,10 @@ import asyncio
 import json
 import os
 import socket
+import time
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -51,6 +59,10 @@ POLL_SECONDS = 0.5
 # A pending entry idle this long belongs to a consumer that is gone.
 CLAIM_IDLE_MS = 60_000
 RETRY_SECONDS = (1.0, 2.0, 5.0, 10.0)
+# The gateway keeps a closed call resumable for 30 minutes; a margin on top of that.
+ABANDONED_AFTER = timedelta(minutes=35)
+ABANDONED_OUTCOME = "abandoned"
+SWEEP_SECONDS = 60.0
 
 Entry = tuple[str, dict[str, str]]
 
@@ -95,12 +107,16 @@ class CallLogConsumer:
         failures = 0
         claimed = False
         own_pending = True
+        next_sweep = 0.0
         while True:
             try:
                 if not claimed:
                     await self.ensure_group()
                     await self.claim_stale()
                     claimed = True
+                if time.monotonic() >= next_sweep:
+                    await self.close_abandoned()
+                    next_sweep = time.monotonic() + SWEEP_SECONDS
                 entries = await self.read(pending=own_pending)
                 if entries:
                     await self.persist(entries)
@@ -115,6 +131,28 @@ class CallLogConsumer:
                 delay = RETRY_SECONDS[min(failures, len(RETRY_SECONDS) - 1)]
                 failures += 1
                 await asyncio.sleep(delay)
+
+    async def close_abandoned(self, now: datetime | None = None) -> int:
+        """Close open calls whose last event is older than ``ABANDONED_AFTER``."""
+        cutoff = (now or datetime.now(UTC)) - ABANDONED_AFTER
+        last = (
+            select(CallEventRow.call_id, func.max(CallEventRow.ts).label("ts"))
+            .join(Call, Call.id == CallEventRow.call_id)
+            .where(Call.ended_at.is_(None))
+            .group_by(CallEventRow.call_id)
+            .subquery()
+        )
+        async with self._db() as db, db.begin():
+            result = await db.execute(
+                update(Call)
+                .where(Call.id == last.c.call_id, Call.ended_at.is_(None), last.c.ts < cutoff)
+                .values(ended_at=last.c.ts, outcome=ABANDONED_OUTCOME)
+                .returning(Call.id)
+            )
+            closed = len(result.all())
+        if closed:
+            log.info("calls_abandoned", count=closed)
+        return closed
 
     async def ensure_group(self) -> None:
         try:

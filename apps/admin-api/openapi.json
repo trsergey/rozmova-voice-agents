@@ -303,6 +303,7 @@
                     "limit",
                     "handoff",
                     "completed",
+                    "abandoned",
                     "open"
                   ],
                   "type": "string"

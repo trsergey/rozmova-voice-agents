@@ -13,6 +13,12 @@ the same arguments, in a later turn than the one in which its price was announce
    turn: a confirmation must come in the very next turn. A call with other arguments
    quotes again and replaces the pending action.
 
+   One exception, once per quote: the subscriber's answer was unclear but short (not a
+   no, nothing imitating a system message, e.g. a typo), no tool ran in that turn, and the
+   bot's reply named the quoted subject again: the bot re-asked the same question, so the
+   answer to it in the next turn still counts. Without it a plain «так» after the re-ask
+   was refused (ROZ-88).
+
 So a service cannot be activated in the turn that names its price, a different service
 than the one announced cannot be activated, and an old "yes" cannot be reused later.
 
@@ -21,6 +27,8 @@ than the one announced cannot be activated, and an old "yes" cannot be reused la
    system message. Otherwise the tool quotes again with ``consent_missing`` and the
    pending action moves to this turn, so a clear "так" next turn still works.
 """
+
+import re
 
 from rozmova_engine.providers import ToolCall
 from rozmova_engine.session import PendingAction, SessionState
@@ -62,7 +70,13 @@ async def call_tool(
     if not isinstance(quote, Quote):
         # Nothing to confirm (unknown service, already active, error): answer as is.
         return quote
-    state.pending_action = PendingAction(name=bound.tool.name, args=args, turn=state.turn)
+    subject = quote.details.get("service")
+    state.pending_action = PendingAction(
+        name=bound.tool.name,
+        args=args,
+        turn=state.turn,
+        subject=subject if isinstance(subject, str) else None,
+    )
     result: ToolResult = {"status": CONFIRMATION_REQUIRED, **quote.details}
     if missing is not None:
         result["consent_missing"] = (
@@ -83,6 +97,33 @@ def _utterance(state: SessionState) -> str:
 
 
 def finish_turn(state: SessionState) -> None:
-    """Drop a pending action that was not confirmed in the turn that just ended."""
-    if state.pending_action is not None and state.pending_action.turn < state.turn:
+    """Drop a pending action that was not confirmed in the turn that just ended, unless the
+    bot only asked about it again (rule 3)."""
+    pending = state.pending_action
+    if pending is None or pending.turn >= state.turn:
+        return
+    if not pending.reasked and _reasked(state, pending):
+        state.pending_action = pending.model_copy(update={"reasked": True})
+    else:
         state.pending_action = None
+
+
+def _reasked(state: SessionState, pending: PendingAction) -> bool:
+    if pending.subject is None:
+        return False
+    answer = consent(_utterance(state))
+    if answer.verdict != "unclear" or not answer.answer_like:
+        return False
+    turn = [entry.message for entry in state.history if entry.turn == state.turn]
+    if any(message.role == "tool" or message.tool_calls for message in turn):
+        return False
+    reply = " ".join(m.content for m in turn if m.role == "assistant")
+    return _mentions(reply, pending.subject)
+
+
+def _mentions(text: str, subject: str) -> bool:
+    """Whether ``text`` names ``subject`` in any case form: every word of the subject, cut
+    to its stem, starts a word of the text («Голосова пошта» in «голосову пошту»)."""
+    words = re.findall(r"\w+", text.casefold())
+    stems = [w[: max(4, len(w) - 2)] for w in re.findall(r"\w+", subject.casefold())]
+    return all(any(word.startswith(stem) for word in words) for stem in stems)

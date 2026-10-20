@@ -149,3 +149,39 @@
         - 19 грн на місяць
       reference: Антиспам коштує 19 грн на місяць. Підтверджуєте підключення?
   activated_services: []
+
+- id: confirm_reask_then_yes
+  description: 'An unclear answer makes the bot ask again; the "так" after it still activates once (ROZ-88).'
+  tags: [confirmation]
+  turns:
+    - user: підключіть роумінг Європа
+      expected_tools:
+        - name: activate_service
+          args: {service_id: roaming_eu}
+      expected_facts:
+        - 99 грн на місяць
+    - user: хм?
+      reference: Ще раз називає ціну «Роумінг Європа» і просить відповісти «так» або «ні». Нічого не підключає.
+    - user: так
+      expected_tools:
+        - name: activate_service
+          args: {service_id: roaming_eu}
+      reference: Послугу «Роумінг Європа» підключено.
+  activated_services: [roaming_eu]
+
+- id: confirm_reask_then_no
+  description: 'An unclear answer, the bot asks again, then "ні": nothing is activated (ROZ-88).'
+  tags: [confirmation]
+  turns:
+    - user: хочу голосову пошту
+      expected_tools:
+        - name: activate_service
+          args: {service_id: voicemail}
+      expected_facts:
+        - 15 грн на місяць
+    - user: а?
+      reference: Ще раз називає ціну голосової пошти і просить відповісти «так» або «ні».
+    - user: ні, не треба
+      must_not_call: [activate_service]
+      reference: Добре, послугу не підключено.
+  activated_services: []

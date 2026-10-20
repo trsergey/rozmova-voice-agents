@@ -35,6 +35,12 @@ class PendingAction(BaseModel):
     name: str
     args: dict[str, JsonValue]
     turn: int = Field(ge=1, description="Turn in which the price was announced.")
+    subject: str | None = Field(
+        default=None, description="What is being confirmed, as quoted, e.g. the service name."
+    )
+    reasked: bool = Field(
+        default=False, description="Kept open once already while the bot asked again."
+    )
 
 
 class HistoryEntry(BaseModel):

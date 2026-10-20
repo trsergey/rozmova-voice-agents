@@ -9,6 +9,10 @@ to repeat it, so consent requires both.
 A message is consent only when it is short, contains a yes word, no negation and nothing
 that imitates a system or tool message. Anything else is not consent, and the tool quotes
 again instead of running.
+
+People type fast: a stretched word («таак») counts as the word, and a word of five letters
+or more one letter away from a yes word («підключайтте») counts as that yes word, unless it is as
+close to a no word. Short words are matched exactly: «там» is not «так».
 """
 
 import re
@@ -45,11 +49,17 @@ _WORD = re.compile(r"[^\W\d_]+(?:['’ʼ][^\W\d_]+)*")
 
 Verdict = Literal["yes", "no", "unclear"]
 
+# Typo matching only for words this long: shorter ones have too many neighbours.
+FUZZY_MIN_LETTERS = 5
+
 
 @dataclass(frozen=True, slots=True)
 class Consent:
     verdict: Verdict
     reason: str
+    # A short plain answer: no system imitation and not longer than a reply to "Підключити?".
+    # An unclear answer like that keeps the question open for one re-ask (ADR 0015).
+    answer_like: bool = False
 
     @property
     def given(self) -> bool:
@@ -67,9 +77,38 @@ def consent(utterance: str) -> Consent:
     if len(words) > MAX_CONSENT_WORDS:
         return Consent("unclear", "the message is longer than a plain answer")
     if any(phrase in text for phrase in YES_PHRASES):
-        return Consent("yes", "a yes phrase")
-    if any(word in NO_WORDS for word in words):
-        return Consent("no", "the message declines or hesitates")
-    if any(word in YES_WORDS for word in words):
-        return Consent("yes", "a yes word")
-    return Consent("unclear", "no yes word in the message")
+        return Consent("yes", "a yes phrase", answer_like=True)
+    kinds = [_kind(word) for word in words]
+    if "no" in kinds:
+        return Consent("no", "the message declines or hesitates", answer_like=True)
+    if "yes" in kinds:
+        return Consent("yes", "a yes word", answer_like=True)
+    return Consent("unclear", "no yes word in the message", answer_like=True)
+
+
+def _kind(word: str) -> Literal["yes", "no"] | None:
+    for form in (word, _squeeze(word)):
+        if form in NO_WORDS:
+            return "no"
+        if form in YES_WORDS:
+            return "yes"
+    if len(word) < FUZZY_MIN_LETTERS:
+        return None
+    near_yes = any(_one_edit(word, yes) for yes in YES_WORDS if len(yes) >= FUZZY_MIN_LETTERS)
+    near_no = any(_one_edit(word, no) for no in NO_WORDS if len(no) >= FUZZY_MIN_LETTERS)
+    return "yes" if near_yes and not near_no else None
+
+
+def _squeeze(word: str) -> str:
+    """«таак» → «так»: runs of one letter collapse to one."""
+    return re.sub(r"(.)\1+", r"\1", word)
+
+
+def _one_edit(a: str, b: str) -> bool:
+    """Whether ``a`` and ``b`` differ by one substitution, insertion or deletion at most."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b, strict=True)) <= 1
+    short, long = (a, b) if len(a) < len(b) else (b, a)
+    return any(long[:i] + long[i + 1 :] == short for i in range(len(long)))

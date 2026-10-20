@@ -1624,7 +1624,7 @@ export interface operations {
         parameters: {
             query?: {
                 bot_id?: string | null;
-                outcome?: ("hangup" | "timeout" | "shutdown" | "limit" | "handoff" | "completed" | "open") | null;
+                outcome?: ("hangup" | "timeout" | "shutdown" | "limit" | "handoff" | "completed" | "abandoned" | "open") | null;
                 /** @description Started at or after */
                 since?: string | null;
                 /** @description Started before */

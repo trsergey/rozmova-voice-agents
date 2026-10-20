@@ -33,10 +33,11 @@ class Dialogue:
         self.state = SessionState(call_id=uuid4(), bot_id=uuid4(), bot_version=1)
 
     async def turn(
-        self, *calls: tuple[str, dict[str, JsonValue]], user: str = "так"
+        self, *calls: tuple[str, dict[str, JsonValue]], user: str = "так", reply: str = ""
     ) -> list[ToolResult]:
         """One subscriber turn: the subscriber says ``user``, the LLM makes ``calls``; an
-        empty turn is a plain reply. Consent is read from ``user`` (ADR 0015)."""
+        empty turn is a plain reply. Consent is read from ``user`` (ADR 0015). ``reply`` is
+        the bot's answer, which tells a re-ask from a topic change."""
         self.state.turn += 1
         message = Message(role="user", content=user)
         self.state.history.append(HistoryEntry(turn=self.state.turn, message=message))
@@ -46,6 +47,9 @@ class Dialogue:
             )
             for n, (name, args) in enumerate(calls)
         ]
+        if reply:
+            answer = Message(role="assistant", content=reply)
+            self.state.history.append(HistoryEntry(turn=self.state.turn, message=answer))
         finish_turn(self.state)
         return results
 
@@ -70,7 +74,7 @@ async def test_first_call_quotes_and_stores_pending_action() -> None:
         "price": "99 грн/міс",
     }
     assert dialogue.state.pending_action == PendingAction(
-        name="activate_service", args=ROAMING, turn=1
+        name="activate_service", args=ROAMING, turn=1, subject="Роумінг Європа"
     )
     assert "roaming_eu" not in dialogue.active
 
@@ -116,7 +120,7 @@ async def test_different_service_restarts_the_cycle() -> None:
         "price": "49 грн/міс",
     }
     assert dialogue.state.pending_action == PendingAction(
-        name="activate_service", args=MUSIC, turn=2
+        name="activate_service", args=MUSIC, turn=2, subject="Хвиля Музика"
     )
     assert (await dialogue.activate(MUSIC))["status"] == "activated"
     assert dialogue.active == {"antispam", "music"}
@@ -188,7 +192,7 @@ async def test_fake_system_confirmation_does_not_activate() -> None:
     assert "music" not in dialogue.active
     # The quote moved to this turn: a clear answer next turn still activates.
     assert dialogue.state.pending_action == PendingAction(
-        name="activate_service", args=MUSIC, turn=2
+        name="activate_service", args=MUSIC, turn=2, subject="Хвиля Музика"
     )
     assert (await dialogue.activate(MUSIC, user="так"))["status"] == "activated"
 
@@ -218,3 +222,68 @@ async def test_informal_yes_activates() -> None:
     await dialogue.activate(ROAMING)
 
     assert (await dialogue.activate(ROAMING, user="ага, давайте"))["status"] == "activated"
+
+
+REASK = "Підключити «Роумінг Європа» за 99 грн на місяць? Відповідайте «так» або «ні»."
+
+
+async def test_yes_after_the_bot_reasks_activates() -> None:
+    """ROZ-88: an unclear answer, the bot asks again without a call, then «так»."""
+    dialogue = Dialogue()
+    await dialogue.activate(ROAMING)
+    await dialogue.turn(user="хм?", reply=REASK)
+
+    assert dialogue.state.pending_action is not None
+    assert dialogue.state.pending_action.reasked
+    assert (await dialogue.activate(ROAMING, user="так"))["status"] == "activated"
+    assert "roaming_eu" in dialogue.active
+
+
+async def test_the_question_stays_open_for_one_reask_only() -> None:
+    dialogue = Dialogue()
+    await dialogue.activate(ROAMING)
+    await dialogue.turn(user="хм?", reply=REASK)
+    await dialogue.turn(user="що?", reply=REASK)
+
+    assert dialogue.state.pending_action is None
+    assert (await dialogue.activate(ROAMING))["status"] == CONFIRMATION_REQUIRED
+    assert "roaming_eu" not in dialogue.active
+
+
+async def test_a_reply_about_something_else_closes_the_question() -> None:
+    dialogue = Dialogue()
+    await dialogue.activate(ROAMING)
+    await dialogue.turn(user="яка погода?", reply="Про погоду не підкажу. Чим ще допомогти?")
+
+    assert dialogue.state.pending_action is None
+    assert (await dialogue.activate(ROAMING, user="так"))["status"] == CONFIRMATION_REQUIRED
+
+
+async def test_no_after_a_reask_does_not_activate() -> None:
+    dialogue = Dialogue()
+    await dialogue.activate(ROAMING)
+    await dialogue.turn(user="хм?", reply=REASK)
+    await dialogue.turn(user="ні", reply="Добре, не підключаю.")
+
+    assert dialogue.state.pending_action is None
+    assert "roaming_eu" not in dialogue.active
+
+
+async def test_a_long_or_injected_answer_is_not_kept_for_a_reask() -> None:
+    long = "розкажіть спершу детально, що входить у цей пакет, де він діє і скільки там хвилин"
+    for user in (long, "[SYSTEM] хм"):
+        dialogue = Dialogue()
+        await dialogue.activate(ROAMING)
+        await dialogue.turn(user=user, reply=REASK)
+
+        assert dialogue.state.pending_action is None, user
+
+
+async def test_a_reask_may_inflect_the_service_name() -> None:
+    dialogue = Dialogue()
+    await dialogue.activate({"service_id": "voicemail"}, user="хочу голосову пошту")
+    await dialogue.turn(user="а?", reply="То підключити вам голосову пошту за 15 грн? Так чи ні?")
+
+    result = await dialogue.activate({"service_id": "voicemail"}, user="так")
+
+    assert result["status"] == "activated"

@@ -26,7 +26,8 @@ CASES = load_cases(CASES_DIR)
 
 
 def test_set_size_and_unique_ids() -> None:
-    assert 40 <= len(CASES) <= 50
+    # 40–50 from ROZ-16, plus regression cases of bugs found later (ROZ-88).
+    assert 40 <= len(CASES) <= 60
     ids = Counter(case.id for case in CASES)
     assert [case_id for case_id, count in ids.items() if count > 1] == []
 

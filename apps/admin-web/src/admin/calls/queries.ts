@@ -6,7 +6,7 @@ import { client, unwrap, type Schemas } from "../../api/client";
 export type CallRow = Schemas["CallOut"];
 export type CallDetail = Schemas["CallDetailOut"];
 export type CallEvent = Schemas["CallEventOut"];
-export type Outcome = "hangup" | "timeout" | "shutdown" | "limit" | "handoff" | "completed" | "open";
+export type Outcome = "hangup" | "timeout" | "shutdown" | "limit" | "handoff" | "completed" | "abandoned" | "open";
 
 export interface Filters {
   bot_id?: string;

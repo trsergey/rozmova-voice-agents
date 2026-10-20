@@ -184,6 +184,31 @@ async def test_a_call_becomes_a_calls_row_and_its_timeline(world: World) -> None
     await live.aclose()  # type: ignore[no-untyped-call]
 
 
+async def test_a_call_left_without_ending_is_closed_as_abandoned(world: World) -> None:
+    """The subscriber closed the tab: no session_end, only a resumable session_closed."""
+    left, quiet, ended = uuid4(), uuid4(), uuid4()
+    for call_id in (left, quiet, ended):
+        await world.add(call_id, "session_started", bot_version=1, user_id="user:x", debug=False)
+    await world.add(left, "session_closed", at=60, code=None, resumable=True)
+    await world.add(quiet, "user_message", at=30 * 60, text="алло")  # still within the window
+    await world.add(ended, "session_end", at=10, reason="hangup")
+    await consume_all(c := consumer(world))
+
+    closed = await c.close_abandoned(now=T0 + timedelta(minutes=40))
+
+    assert closed == 1
+    call = await world.call(left)
+    assert call is not None
+    assert (call.outcome, call.ended_at) == ("abandoned", T0 + timedelta(seconds=60))
+    quiet_call = await world.call(quiet)
+    assert quiet_call is not None
+    assert quiet_call.ended_at is None
+    ended_call = await world.call(ended)
+    assert ended_call is not None
+    assert ended_call.outcome == "hangup"
+    assert await c.close_abandoned(now=T0 + timedelta(minutes=40)) == 0
+
+
 async def test_a_redelivered_entry_is_stored_once(world: World) -> None:
     call_id = uuid4()
     await world.add(call_id, "session_started", bot_version=1, user_id="user:x", debug=True)

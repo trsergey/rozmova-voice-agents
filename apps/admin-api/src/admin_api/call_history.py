@@ -36,7 +36,11 @@ from rozmova_core.models import CallEvent as CallEventRow
 log = structlog.get_logger(__name__)
 
 # ``open``: no ``session_end`` yet, a call in progress or one whose gateway went away.
-Outcome = Literal["hangup", "timeout", "shutdown", "limit", "handoff", "completed", "open"]
+# The gateway's session_end reasons, "abandoned" for a call the subscriber left without
+# ending it (closed by the call log), and "open" for not ended yet.
+Outcome = Literal[
+    "hangup", "timeout", "shutdown", "limit", "handoff", "completed", "abandoned", "open"
+]
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 # How often the live feed re-checks that its session still exists (logout, revoked code).
