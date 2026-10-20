@@ -12,7 +12,9 @@
 **/node_modules
 apps/admin-web/dist
 docs
-evals
+# admin-api runs evals/cases with evals/thresholds.yaml (ROZ-73); reports stay out.
+evals/reports
+evals/README.md
 infra
 kb/README.md
 **/tests
