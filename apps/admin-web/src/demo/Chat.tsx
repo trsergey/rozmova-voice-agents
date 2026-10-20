@@ -1,14 +1,26 @@
-// The chat with one bot: streamed replies, cited knowledge-base sources, handoff and end.
+// The chat with one bot as a subscriber sees it: streamed replies without citation markers,
+// the sources as a line of titles, starter prompts, handoff and end. The public demo page and
+// the admin's demo page both show it.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Bot } from "./api";
 import type { BotLine } from "../call/callState";
+import { sourceTitles, withoutMarkers } from "../call/citations";
 import { useCall } from "../call/useCall";
+
+// What a visitor can try first: S1, S2, S3 and the handoff.
+export const STARTERS = [
+  "Скільки грошей у мене на рахунку?",
+  "Що входить у тариф «Безлім»?",
+  "Підключіть роумінг Європа",
+  "З'єднайте мене з оператором",
+];
 
 interface Props {
   csrf: string;
   bot: Bot;
-  onLogout: () => void;
+  // Absent in the admin, where the session is the admin's own.
+  onLogout?: () => void;
 }
 
 export function Chat({ csrf, bot, onLogout }: Props) {
@@ -28,6 +40,7 @@ export function Chat({ csrf, bot, onLogout }: Props) {
     send(utterance);
     setText("");
   };
+  const asked = state.lines.some((line) => line.role === "user");
 
   return (
     <section className="card chat">
@@ -42,9 +55,11 @@ export function Chat({ csrf, bot, onLogout }: Props) {
               Завершити
             </button>
           )}
-          <button type="button" className="link" onClick={onLogout}>
-            Вийти
-          </button>
+          {onLogout && (
+            <button type="button" className="link" onClick={onLogout}>
+              Вийти
+            </button>
+          )}
         </span>
       </div>
 
@@ -67,6 +82,15 @@ export function Chat({ csrf, bot, onLogout }: Props) {
           </p>
         )}
         {state.ended && <p className="status">{state.ended}</p>}
+        {live && !asked && (
+          <div className="starters" aria-label="Що можна спитати">
+            {STARTERS.map((starter) => (
+              <button key={starter} type="button" className="starter" onClick={() => send(starter)}>
+                {starter}
+              </button>
+            ))}
+          </div>
+        )}
         <div ref={bottom} />
       </div>
 
@@ -98,18 +122,13 @@ function BotReply({ line }: { line: BotLine }) {
   return (
     <div className={`line bot${line.done ? "" : " streaming"}`}>
       <p>
-        {line.text}
+        {withoutMarkers(line.text, !line.done)}
         {line.interrupted && <span className="muted"> (перервано)</span>}
       </p>
       {line.sources.length > 0 && (
-        <ol className="sources" aria-label="Джерела">
-          {line.sources.map((source) => (
-            <li key={source.marker} value={source.marker}>
-              {source.document_title}
-              {source.section && ` — ${source.section}`}
-            </li>
-          ))}
-        </ol>
+        <p className="sources">
+          <span className="sources-label">Джерела:</span> {sourceTitles(line.sources).join(" · ")}
+        </p>
       )}
     </div>
   );

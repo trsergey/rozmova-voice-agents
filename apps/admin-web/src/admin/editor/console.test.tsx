@@ -146,7 +146,9 @@ test("replies stream in, with the tools the bot called and the sources it cited"
   );
   expect(talk).toHaveTextContent("get_balance · готово");
   expect(talk).toHaveTextContent('"balance": 120');
-  expect(talk).toHaveTextContent("На рахунку 120 грн [1].");
+  expect(talk).toHaveTextContent("На рахунку 120 грн1.");
+  // The marker stays for the admin, as a superscript naming its source.
+  expect(within(talk).getByText("1", { selector: "sup" })).toHaveAttribute("title", "Тарифи — Ціни");
   expect(within(talk).getByRole("list", { name: "Джерела" })).toHaveTextContent("Тарифи — Ціни");
 });
 

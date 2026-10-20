@@ -48,6 +48,7 @@ export const routes: RouteObject[] = [
               { path: "calls/:callId", lazy: page(() => import("./admin/calls/CallPage"), (m) => m.CallPage) },
               { path: "kb", lazy: page(() => import("./admin/kb/KbPage"), (m) => m.KbPage) },
               { path: "ops", lazy: page(() => import("./admin/ops/OpsPage"), (m) => m.OpsPage) },
+              { path: "demo", lazy: page(() => import("./admin/demo/DemoChatPage"), (m) => m.DemoChatPage) },
               {
                 Component: RequireAdmin,
                 children: [

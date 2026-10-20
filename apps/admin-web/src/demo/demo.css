@@ -1,5 +1,6 @@
-/* The demo page (/demo/). Every rule is scoped under .demo, so the admin's Tailwind styles
-   and these never meet; the colour tokens stay on :root. */
+/* The demo chat: the public page (/demo/) and the admin's demo page. Every rule is scoped
+   under .demo, so the admin's Tailwind styles and these never meet; the colour tokens stay on
+   :root under names the admin does not use. */
 :root {
   --bg: #f5f6f8;
   --card: #ffffff;
@@ -12,6 +13,10 @@
   --error: #b42318;
   --border: #dfe2e6;
   color-scheme: light dark;
+}
+
+/* On the element, not :root: the admin loads this file for its demo page and keeps its font. */
+.demo {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.45;
 }
@@ -36,7 +41,7 @@
 .demo .subtitle, .demo .muted { color: var(--muted); }
 .demo .subtitle { margin: 4px 0 20px; }
 .demo .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-.demo .login { display: grid; gap: 8px; max-width: 360px; }
+.demo .login { display: grid; gap: 8px; max-width: 360px; margin: 0 auto; }
 .demo input { font: inherit; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); min-width: 0; }
 .demo button { font: inherit; padding: 10px 16px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
 .demo button:disabled { opacity: 0.5; cursor: default; }
@@ -51,7 +56,16 @@
 .demo .line.user { align-self: flex-end; background: var(--user); }
 .demo .line.bot { align-self: flex-start; background: var(--bot); }
 .demo .line.streaming p::after { content: "▍"; color: var(--muted); }
-.demo .sources { margin: 6px 0 0; padding-left: 1.6em; font-size: 0.85rem; color: var(--muted); }
+.demo .sources { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--border); font-size: 0.9rem; }
+.demo .sources-label { color: var(--muted); }
+.demo .starters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.demo button.starter { background: var(--card); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; font-size: 0.9rem; border-radius: 999px; }
+.demo button.starter:hover { border-color: var(--accent); }
+.demo .back { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+.demo .back:hover { text-decoration: underline; }
+.demo.page.signin { min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.demo.page.signin .login { width: 100%; text-align: left; }
+.demo.embedded { padding: 0; }
 .demo .status { align-self: center; color: var(--muted); font-size: 0.9rem; text-align: center; }
 .demo .composer { display: flex; gap: 8px; }
 .demo .composer input { flex: 1; }

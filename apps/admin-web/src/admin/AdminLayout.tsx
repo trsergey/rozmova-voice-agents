@@ -10,6 +10,7 @@ const NAV = [
   { to: "/admin/kb", label: "База знань" },
   { to: "/admin/ops", label: "Операції" },
   { to: "/admin/access-codes", label: "Коди доступу", adminOnly: true },
+  { to: "/admin/demo", label: "Демо-чат" },
 ];
 
 export function AdminLayout() {
@@ -44,9 +45,6 @@ export function AdminLayout() {
               {item.label}
             </NavLink>
           ))}
-          <a href="/demo/" className={`${link} ${idle}`}>
-            Демо-чат ↗
-          </a>
         </nav>
         <main className="min-w-0 flex-1 px-4 py-6 md:px-6">
           <Outlet />

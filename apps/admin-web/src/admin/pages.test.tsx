@@ -190,3 +190,23 @@ test("revoking asks first, then marks the code revoked", async () => {
   expect(within(row).queryByRole("button", { name: "Відкликати" })).not.toBeInTheDocument();
   expect(calls.find((call) => call.key === "DELETE /access-codes/c-1")?.csrf).toBe("csrf-admin");
 });
+
+// --- demo chat in the admin ----------------------------------------------------------------
+
+test("the demo chat opens inside the admin, on the admin's session, with the sidebar kept", async () => {
+  const live = { id: "b-1", name: "Hvylia demo", provider: "openai", model: "m", live_version_id: "v-1", live_version: 3, draft_updated_at: null, created_at: "2026-10-15T08:00:00Z" };
+  fakeApi({ ...as(ADMIN), "GET /bots": ok([{ ...live, id: "b-0", live_version_id: null, live_version: null }, live]) });
+  const router = open("/admin/bots");
+
+  const user = userEvent.setup();
+  const nav = await screen.findByRole("navigation", { name: "Розділи" });
+  await user.click(within(nav).getByRole("link", { name: "Демо-чат" }));
+
+  expect(await screen.findByRole("heading", { name: "Демо-чат" })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe("/admin/demo");
+  expect(await screen.findByRole("button", { name: "Почати розмову" })).toBeInTheDocument();
+  expect(screen.getByText("Hvylia demo")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Вийти" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Сторінка для гостей ↗" })).toHaveAttribute("target", "_blank");
+  expect(within(nav).getByRole("link", { name: "Демо-чат" })).toHaveAttribute("aria-current", "page");
+});

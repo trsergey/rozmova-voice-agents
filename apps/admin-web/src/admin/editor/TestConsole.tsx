@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { BotLine, CallState, ToolLine } from "../../call/callState";
+import { withSuperscripts } from "../../call/citations";
 import { Button, Input } from "../ui";
 
 interface Call {
@@ -117,7 +118,7 @@ function BotReply({ line }: { line: BotLine }) {
   return (
     <div className="mr-8 rounded-lg bg-muted-bg px-3 py-2 text-sm">
       <p className="whitespace-pre-wrap">
-        {line.text}
+        {withSuperscripts(line.text, line.sources)}
         {!line.done && <span className="text-fg-muted">▍</span>}
         {line.interrupted && <span className="text-fg-muted"> (перервано)</span>}
       </p>

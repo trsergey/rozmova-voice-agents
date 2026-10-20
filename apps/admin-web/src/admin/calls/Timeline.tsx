@@ -3,6 +3,7 @@
 // Each row shows its offset from the call's start.
 import type { ReactNode } from "react";
 
+import { withSuperscripts } from "../../call/citations";
 import { formatDuration, formatMs } from "../format";
 import type { CallEvent } from "./queries";
 import { outcomeLabel } from "./outcomes";
@@ -35,7 +36,7 @@ function Row({ event }: { event: CallEvent }) {
     case "assistant_message":
       return (
         <Bubble who="Бот" tone="bg-muted-bg">
-          {str(p.text)}
+          {withSuperscripts(str(p.text))}
           {p.interrupted === true && <span className="text-fg-muted"> (перервано)</span>}
         </Bubble>
       );

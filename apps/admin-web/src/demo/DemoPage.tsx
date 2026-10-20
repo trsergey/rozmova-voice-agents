@@ -1,5 +1,6 @@
 // The public demo page at /demo/ (ROZ-68): an access-code login, then a chat with the first
-// published bot (the seeded demo bot). Its styles are scoped under `.demo`.
+// published bot (the seeded demo bot). Its styles are scoped under `.demo`. An admin who
+// lands here gets a link back to the admin, where the same chat sits in the admin layout.
 import { useEffect, useState, type FormEvent } from "react";
 
 import { api, ApiError, type Bot, type Session } from "./api";
@@ -33,9 +34,15 @@ export function DemoPage() {
     setState({ status: "anonymous" });
   };
 
+  const admin = state.status === "ready" && state.session.user.role === "admin";
   return (
-    <main className="demo page">
+    <main className={`demo page${state.status === "anonymous" ? " signin" : ""}`}>
       <header className="header">
+        {admin && (
+          <a className="back" href="/admin/">
+            ← Адмінка
+          </a>
+        )}
         <h1>Hvylia Mobile</h1>
         <p className="subtitle">Демо голосового асистента підтримки, поки що текстом</p>
       </header>

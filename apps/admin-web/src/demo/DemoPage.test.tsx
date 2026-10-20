@@ -1,5 +1,5 @@
 // The whole page against a fake admin API (fetch) and a fake gateway (WebSocket).
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { ServerMessage } from "../../../../packages/contracts/ts/protocol.server";
@@ -121,7 +121,7 @@ test("an access code logs in and opens the chat with the published bot", async (
   expect(calls.map((call) => call.key)).toContain("POST /auth/access-code");
 });
 
-test("a call streams the reply, lists the cited sources and asks for no debug events", async () => {
+test("a call streams the reply without citation markers, names the sources and asks for no debug events", async () => {
   const calls = fakeApi(loggedIn);
   const { user, ws } = await startCall();
 
@@ -135,17 +135,23 @@ test("a call streams the reply, lists the cited sources and asks for no debug ev
   expect(ws.sent).toEqual([{ type: "user_text", text: "як перевірити баланс?" }]);
   expect(screen.getByText("як перевірити баланс?")).toBeInTheDocument();
 
-  ws.receive({ type: "assistant_delta", turn_id: 2, text: "Наберіть *111# " });
-  ws.receive({ type: "assistant_delta", turn_id: 2, text: "[1]." });
+  ws.receive({ type: "assistant_delta", turn_id: 2, text: "Наберіть *111# [" });
+  // A marker cut by the stream does not flash on screen.
+  expect(screen.getByText("Наберіть *111#")).toBeInTheDocument();
+  ws.receive({ type: "assistant_delta", turn_id: 2, text: "1][2]." });
   ws.receive({
     type: "turn_end",
     turn_id: 2,
     timings: { total_ms: 5, ttft_ms: 2, stages: {} },
-    sources: [{ marker: 1, chunk_id: "faq-1", document_id: "faq", document_title: "Часті питання", section: "Баланс" }],
+    sources: [
+      { marker: 1, chunk_id: "faq-1", document_id: "faq", document_title: "Часті питання", section: "Баланс" },
+      { marker: 2, chunk_id: "faq-2", document_id: "faq", document_title: "Часті питання", section: "USSD" },
+    ],
   });
 
-  expect(screen.getByText("Наберіть *111# [1].")).toBeInTheDocument();
-  expect(screen.getByRole("list", { name: "Джерела" })).toHaveTextContent("Часті питання — Баланс");
+  expect(screen.getByText("Наберіть *111#.")).toBeInTheDocument();
+  // Each document once, without sections.
+  expect(screen.getByText("Джерела:").parentElement).toHaveTextContent(/^Джерела: Часті питання$/);
 });
 
 test("a handoff shows the notice and offers a new call", async () => {
@@ -202,4 +208,29 @@ test("a gateway restart reconnects with the same call_id and resends the unanswe
   expect(resumed?.sent).toEqual([{ type: "user_text", text: "мій баланс?" }]);
   expect(screen.getByText("мій баланс?")).toBeInTheDocument();
   expect(screen.getByLabelText("Повідомлення")).toBeEnabled();
+});
+
+test("starter prompts ask for the visitor until the first message", async () => {
+  fakeApi(loggedIn);
+  const { user, ws } = await startCall();
+
+  const starters = screen.getByLabelText("Що можна спитати");
+  await user.click(within(starters).getByRole("button", { name: "Що входить у тариф «Безлім»?" }));
+
+  expect(ws.sent).toEqual([{ type: "user_text", text: "Що входить у тариф «Безлім»?" }]);
+  expect(screen.queryByLabelText("Що можна спитати")).not.toBeInTheDocument();
+});
+
+test("the sign-in form is centred and an admin gets a way back to the admin", async () => {
+  fakeApi({ "GET /auth/me": () => ({ status: 401, body: { error: { code: "not_authenticated", message: "x" } } }) });
+  const { unmount } = render(<DemoPage />);
+  await screen.findByLabelText("Код доступу");
+  expect(screen.getByRole("main")).toHaveClass("signin");
+  expect(screen.queryByRole("link", { name: "← Адмінка" })).not.toBeInTheDocument();
+  unmount();
+
+  fakeApi({ ...loggedIn, "GET /auth/me": () => ({ status: 200, body: { ...SESSION, user: { ...SESSION.user, role: "admin" } } }) });
+  render(<DemoPage />);
+  expect(await screen.findByRole("link", { name: "← Адмінка" })).toHaveAttribute("href", "/admin/");
+  expect(screen.getByRole("main")).not.toHaveClass("signin");
 });
