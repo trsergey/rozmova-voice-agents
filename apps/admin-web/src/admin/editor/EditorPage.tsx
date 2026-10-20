@@ -2,7 +2,7 @@
 // palette, connect outlets, move and delete, undo and redo, save, and try the saved draft in
 // the test console, which highlights the active node; every load and save runs the
 // validator, whose errors frame their nodes. Viewers see the same canvas read-only.
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertDialog } from "radix-ui";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useParams } from "react-router";
@@ -25,8 +25,10 @@ export function EditorPage() {
   const bot = useBot(botId);
   const canEdit = useCanEdit();
   const { csrf_token } = useCurrentSession();
+  const queryClient = useQueryClient();
+  const draftKey = ["bots", botId, "draft"];
   const draft = useQuery({
-    queryKey: ["bots", botId, "draft"],
+    queryKey: draftKey,
     queryFn: () => unwrap(client.GET("/bots/{bot_id}/draft", { params: { path: { bot_id: botId } } })),
     staleTime: Infinity,
   });
@@ -62,6 +64,10 @@ export function EditorPage() {
     onSuccess: ({ out, graph }) => {
       useEditor.getState().markSaved(graph);
       setSavedAt(out.updated_at ?? null);
+      // The cached draft is what the editor loads next time it opens: keep it the saved one.
+      // The bot card shows the draft's save time and whether its eval still covers it.
+      queryClient.setQueryData(draftKey, out);
+      void queryClient.invalidateQueries({ queryKey: ["bots", botId], exact: true });
       validate.mutate();
     },
   });

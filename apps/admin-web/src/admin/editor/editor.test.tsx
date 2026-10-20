@@ -103,6 +103,32 @@ test("an added node makes the draft dirty, undo reverts it, save sends the graph
   await vi.waitFor(() => expect(calls.filter((call) => call.key === "POST /bots/b-1/validate")).toHaveLength(2));
 });
 
+test("a saved draft is what the editor shows after leaving and coming back", async () => {
+  // The server keeps what was saved, as admin-api does.
+  let saved: unknown = demo;
+  fakeApi(
+    api(ADMIN, {
+      "GET /bots/b-1/draft": () => ({ status: 200, body: { flow: saved, updated_at: "2026-10-19T09:00:00Z", hash: "h" } }),
+      "PUT /bots/b-1/draft": (body: unknown) => {
+        saved = body;
+        return { status: 200, body: { flow: body, updated_at: "2026-10-19T10:00:00Z", hash: "h2" } };
+      },
+    }),
+  );
+  open("/admin/bots/b-1/editor");
+  await screen.findByTestId("node-assist");
+
+  const user = userEvent.setup();
+  const palette = screen.getByRole("complementary", { name: "Палітра" });
+  await user.click(within(palette).getByRole("button", { name: /Кінець/ }));
+  await user.click(screen.getByRole("button", { name: "Зберегти чернетку" }));
+  await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/^Збережено о/));
+  await user.click(screen.getByRole("link", { name: /Hvylia demo/ }));
+  await user.click(await screen.findByRole("link", { name: "Редактор флоу" }));
+
+  expect(await screen.findByTestId("node-end_1")).toBeInTheDocument();
+});
+
 test("Ctrl+S saves and Ctrl+Z undoes", async () => {
   const calls = fakeApi(api());
   open("/admin/bots/b-1/editor");
