@@ -116,6 +116,21 @@ test("the ops page shows active calls, p95 per stage and error rates", async () 
   expect(hour).toHaveTextContent("Дія (виклик інструмента)—");
   expect(hour).toHaveTextContent("Помилки дій: 25.0% (1 з 4)");
   expect(screen.getByRole("region", { name: "Остання доба" })).toHaveTextContent("Ходів40");
+  // 3.8 s is over the 1.5 s target: marked; 1.5 s for the knowledge base has no target.
+  const ttft = within(hour).getByText("3.8 с");
+  expect(ttft).toHaveClass("text-danger");
+  expect(ttft).toHaveAttribute("title", "Вище цілі");
+  expect(hour).toHaveTextContent("До першого токена (ціль < 1.5 с)");
+  expect(within(hour).getByText("1.5 с")).not.toHaveClass("text-danger");
+});
+
+test("a first token within the target is not marked", async () => {
+  const fast = { ...stats("1h", 9), p95_ms: { turn: 1400, ttft: 1200, llm_ttft: 1100, rag_search: null, tool: null } };
+  fakeApi({ ...as(VIEWER), "GET /ops/summary": ok({ generated_at: "2026-10-19T10:00:00Z", active_calls: 0, windows: [fast] }) });
+  open("/admin/ops");
+
+  const hour = await screen.findByRole("region", { name: "Остання година" });
+  expect(within(hour).getByText("1.2 с")).not.toHaveClass("text-danger");
 });
 
 test("unknown active calls are not shown as zero", async () => {
@@ -186,9 +201,13 @@ test("revoking asks first, then marks the code revoked", async () => {
   expect(dialog).toHaveTextContent("сесії з цим кодом завершаться");
   await user.click(within(dialog).getByRole("button", { name: "Відкликати" }));
 
-  expect(await within(row).findByText("відкликаний")).toBeInTheDocument();
-  expect(within(row).queryByRole("button", { name: "Відкликати" })).not.toBeInTheDocument();
+  // A revoked code leaves the list; it is one click away.
+  expect(await screen.findByText("Діючих кодів немає.")).toBeInTheDocument();
   expect(calls.find((call) => call.key === "DELETE /access-codes/c-1")?.csrf).toBe("csrf-admin");
+  await user.click(screen.getByRole("checkbox", { name: "Показати відкликані (1)" }));
+  const revoked = screen.getByRole("row", { name: /Acme/ });
+  expect(within(revoked).getByText("відкликаний")).toBeInTheDocument();
+  expect(within(revoked).queryByRole("button", { name: "Відкликати" })).not.toBeInTheDocument();
 });
 
 // --- demo chat in the admin ----------------------------------------------------------------

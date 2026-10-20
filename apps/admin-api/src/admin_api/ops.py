@@ -5,7 +5,9 @@ computes a small health summary itself.
 - Per window (last hour, last day), from ``call_events``: calls started, turns, p95 of the
   turn, time to first token, LLM first token, knowledge-base search and tool time (each
   ``tool.<name>`` stage of a turn is one sample); tool calls that returned an error and
-  their share; ``error`` events per turn.
+  their share; ``error`` events per turn. The turn and first-token p95 count only turns
+  that called the LLM: a greeting is sent without one in a few milliseconds, and the
+  smoke test's calls are nothing but greetings, so they would pull the p95 towards zero.
 
 The result is cached for ``CACHE_SECONDS`` per process: the page polls, and the queries
 scan a day of events.
@@ -70,8 +72,10 @@ _TURNS = text(
     """
     SELECT
       count(*) AS turns,
-      percentile_cont(0.95) WITHIN GROUP (ORDER BY (payload->'timings'->>'total_ms')::float),
-      percentile_cont(0.95) WITHIN GROUP (ORDER BY (payload->'timings'->>'ttft_ms')::float),
+      percentile_cont(0.95) WITHIN GROUP (ORDER BY (payload->'timings'->>'total_ms')::float)
+        FILTER (WHERE payload->'timings'->'stages' ? 'llm_ttft'),
+      percentile_cont(0.95) WITHIN GROUP (ORDER BY (payload->'timings'->>'ttft_ms')::float)
+        FILTER (WHERE payload->'timings'->'stages' ? 'llm_ttft'),
       percentile_cont(0.95) WITHIN GROUP (
         ORDER BY (payload->'timings'->'stages'->>'llm_ttft')::float),
       percentile_cont(0.95) WITHIN GROUP (

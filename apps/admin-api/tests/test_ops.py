@@ -50,6 +50,7 @@ async def seed(settings: Settings, now: datetime) -> None:
     events: list[tuple[datetime, str, dict[str, Any]]] = [
         (hour, "session_started", {"resumed": False}),
         (hour, "session_started", {"resumed": True}),  # a reconnect, not a new call
+        (hour, "turn_end", turn_end(2, 0.1, {})),  # a greeting: no LLM, not in the p95
         (hour, "turn_end", turn_end(100, 50, {"llm_ttft": 40, "tool.get_balance": 10})),
         (hour, "turn_end", turn_end(200, 150, {"llm_ttft": 140, "rag_search": 30})),
         (hour, "tool_result", {"name": "get_balance", "result": {"balance": 1}}),
@@ -94,9 +95,9 @@ def test_summary(settings: Settings) -> None:
     assert summary["active_calls"] == 2
     hour, day = summary["windows"]
     assert hour["window"] == "1h"
-    assert (hour["calls"], hour["turns"], hour["tool_calls"], hour["tool_errors"]) == (1, 2, 2, 1)
+    assert (hour["calls"], hour["turns"], hour["tool_calls"], hour["tool_errors"]) == (1, 3, 2, 1)
     assert hour["tool_error_rate"] == 0.5
-    assert (hour["errors"], hour["error_rate"]) == (1, 0.5)
+    assert (hour["errors"], hour["error_rate"]) == (1, pytest.approx(1 / 3))
     # percentile_cont interpolates: p95 of 100 and 200 is 195.
     assert hour["p95_ms"] == {
         "turn": 195.0,
@@ -105,7 +106,7 @@ def test_summary(settings: Settings) -> None:
         "rag_search": 30.0,
         "tool": 10.0,
     }
-    assert (day["window"], day["calls"], day["turns"]) == ("24h", 2, 3)
+    assert (day["window"], day["calls"], day["turns"]) == ("24h", 2, 4)
     assert day["p95_ms"]["turn"] == pytest.approx(920.0)  # 200 + 0.9 * (1000 - 200)
 
 

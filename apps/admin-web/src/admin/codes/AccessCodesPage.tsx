@@ -18,6 +18,10 @@ const key = ["access-codes"] as const;
 export function AccessCodesPage() {
   const codes = useQuery({ queryKey: key, queryFn: () => unwrap(client.GET("/access-codes")) });
   const [issued, setIssued] = useState<Issued | null>(null);
+  // Revoked codes stay in the API for the record; the list shows the ones that work.
+  const [showRevoked, setShowRevoked] = useState(false);
+  const revoked = codes.data?.filter((code) => code.revoked_at).length ?? 0;
+  const shown = codes.data?.filter((code) => showRevoked || !code.revoked_at) ?? [];
 
   return (
     <>
@@ -28,7 +32,16 @@ export function AccessCodesPage() {
       </div>
       {codes.isError && <ErrorText>Не вдалося завантажити коди.</ErrorText>}
       {codes.data?.length === 0 && <p className="text-sm text-fg-muted">Кодів ще немає.</p>}
-      {codes.data && codes.data.length > 0 && (
+      {revoked > 0 && (
+        <label className="mb-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showRevoked} onChange={(event) => setShowRevoked(event.target.checked)} />
+          Показати відкликані ({revoked})
+        </label>
+      )}
+      {codes.data && codes.data.length > 0 && shown.length === 0 && (
+        <p className="text-sm text-fg-muted">Діючих кодів немає.</p>
+      )}
+      {shown.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-line bg-surface">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-line text-fg-muted">
@@ -41,7 +54,7 @@ export function AccessCodesPage() {
               </tr>
             </thead>
             <tbody>
-              {codes.data.map((code) => (
+              {shown.map((code) => (
                 <tr key={code.id} className="border-b border-line last:border-b-0">
                   <td className="px-4 py-3 font-medium">{code.label}</td>
                   <td className="px-4 py-3 text-fg-muted">{formatDateTime(code.created_at)}</td>

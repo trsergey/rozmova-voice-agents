@@ -1,5 +1,7 @@
 // "Операції" (FR-20): calls in progress and, for the last hour and day, p95 latency per
 // stage and error rates. The API caches the summary for 10 s, so the page polls at that rate.
+// The first-token p95 is red above the PRD target; the turn and first-token p95 count only
+// turns that called the LLM (the API leaves greetings out).
 import { useQuery } from "@tanstack/react-query";
 
 import { client, unwrap, type Schemas } from "../../api/client";
@@ -9,6 +11,8 @@ import { Card, ErrorText, PageHeader } from "../ui";
 type Window = Schemas["WindowStats"];
 
 const REFRESH_MS = 10_000;
+// PRD "Відповідати швидко": first token p95 under 1.5 s in text mode.
+export const TTFT_TARGET_MS = 1500;
 const WINDOW_TITLES: Record<Window["window"], string> = { "1h": "Остання година", "24h": "Остання доба" };
 const P95_LABELS: [keyof Window["p95_ms"], string][] = [
   ["turn", "Хід повністю"],
@@ -36,7 +40,7 @@ export function OpsPage() {
       </PageHeader>
       {summary.isError && <ErrorText>Не вдалося завантажити зведення.</ErrorText>}
       {summary.data && (
-        <div className="grid gap-4 lg:grid-cols-[14rem_1fr_1fr]">
+        <div className="grid items-start gap-4 lg:grid-cols-[14rem_1fr_1fr]">
           <Card title="Зараз в ефірі">
             <p className="text-3xl font-semibold tabular-nums" aria-label="Активних дзвінків">
               {summary.data.active_calls ?? "—"}
@@ -65,13 +69,23 @@ function WindowCard({ window }: { window: Window }) {
       </dl>
       <h3 className="mb-2 text-xs font-medium tracking-wide text-fg-muted uppercase">p95 затримки</h3>
       <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-sm">
-        {P95_LABELS.map(([key, label]) => (
-          <div key={key} className="contents">
-            <dt className="text-fg-muted">{label}</dt>
-            <dd className="text-right tabular-nums">{window.p95_ms[key] == null ? "—" : formatMs(window.p95_ms[key])}</dd>
-          </div>
-        ))}
+        {P95_LABELS.map(([key, label]) => {
+          const value = window.p95_ms[key];
+          const over = key === "ttft" && value != null && value > TTFT_TARGET_MS;
+          return (
+            <div key={key} className="contents">
+              <dt className="text-fg-muted">
+                {label}
+                {key === "ttft" && <span className="text-xs"> (ціль &lt; {formatMs(TTFT_TARGET_MS)})</span>}
+              </dt>
+              <dd className={`text-right tabular-nums ${over ? "font-semibold text-danger" : ""}`} title={over ? "Вище цілі" : undefined}>
+                {value == null ? "—" : formatMs(value)}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
+      <p className="mt-1 text-xs text-fg-muted">Хід і перший токен: лише ходи з викликом моделі.</p>
       <p className="mt-4 text-sm">
         Помилки дій: <span className="font-medium tabular-nums">{percent(window.tool_error_rate)}</span>{" "}
         <span className="text-fg-muted">
