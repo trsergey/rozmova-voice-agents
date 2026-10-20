@@ -297,6 +297,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bots/{bot_id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Version
+         * @description One version with its flow, e.g. for the editor to start over from what is live.
+         */
+        get: operations["read_version_bots__bot_id__versions__version__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bots/{bot_id}/versions/{a}/diff/{b}": {
         parameters: {
             query?: never;
@@ -1326,6 +1346,26 @@ export interface components {
              */
             finished_at: string;
         };
+        /** VersionFlowOut */
+        VersionFlowOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            flow: components["schemas"]["FlowGraph"];
+        };
         /** VersionItemOut */
         VersionItemOut: {
             /**
@@ -1928,6 +1968,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_version_bots__bot_id__versions__version__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionFlowOut"];
                 };
             };
             /** @description Validation Error */

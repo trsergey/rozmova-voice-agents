@@ -176,12 +176,13 @@ export function VersionsCard({ botId }: { botId: string }) {
                 <th className="py-2 pr-3 font-medium">Нотатка</th>
                 <th className="py-2 pr-3 font-medium">Eval</th>
                 <th className="py-2 pr-3 font-medium">Хто й коли</th>
+                <th className="py-2 pr-3 font-medium" />
                 <th className="py-2 font-medium" />
               </tr>
             </thead>
             <tbody>
               {versions.data.map((version) => (
-                <tr key={version.id} className="border-t border-line align-top">
+                <tr key={version.id} className="border-t border-line align-middle">
                   <td className="py-2 pr-3 whitespace-nowrap">
                     v{version.version} {version.live && <Badge tone="ok">в ефірі</Badge>}
                   </td>
@@ -194,35 +195,35 @@ export function VersionsCard({ botId }: { botId: string }) {
                     <br />
                     {formatDateTime(version.created_at)}
                   </td>
-                  <td className="py-2">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {version.version > 1 && (
-                        <Link
-                          to={`versions/${version.version - 1}/diff/${version.version}`}
-                          className="rounded-md px-2 py-1 text-accent hover:underline"
-                        >
-                          Зміни
-                        </Link>
-                      )}
-                      {!version.live && (
-                        <AdminOnly>
-                          {confirming === version.version ? (
-                            <Button
-                              onClick={() =>
-                                rollback.mutate(version.version, { onSettled: () => setConfirming(null) })
-                              }
-                              disabled={rollback.isPending}
-                            >
-                              Так, відкотити до v{version.version}
-                            </Button>
-                          ) : (
-                            <Button variant="secondary" onClick={() => setConfirming(version.version)}>
-                              Відкотити
-                            </Button>
-                          )}
-                        </AdminOnly>
-                      )}
-                    </div>
+                  <td className="py-2 pr-3 whitespace-nowrap">
+                    {version.version > 1 && (
+                      <Link
+                        to={`versions/${version.version - 1}/diff/${version.version}`}
+                        className="text-accent hover:underline"
+                      >
+                        Зміни
+                      </Link>
+                    )}
+                  </td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {!version.live && (
+                      <AdminOnly>
+                        {confirming === version.version ? (
+                          <Button
+                            onClick={() =>
+                              rollback.mutate(version.version, { onSettled: () => setConfirming(null) })
+                            }
+                            disabled={rollback.isPending}
+                          >
+                            Так, відкотити до v{version.version}
+                          </Button>
+                        ) : (
+                          <Button variant="secondary" onClick={() => setConfirming(version.version)}>
+                            Відкотити
+                          </Button>
+                        )}
+                      </AdminOnly>
+                    )}
                   </td>
                 </tr>
               ))}

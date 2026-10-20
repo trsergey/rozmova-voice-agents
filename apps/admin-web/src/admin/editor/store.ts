@@ -32,6 +32,8 @@ interface EditorState {
   selectedNodeId: string | null;
 
   load: (flow: FlowGraph) => void;
+  // Swap the whole canvas for another flow (e.g. the live version) as one undoable edit.
+  replace: (flow: FlowGraph) => void;
   addNode: (type: NodeType, x: number, y: number) => string;
   beginDrag: () => void;
   endDrag: () => void;
@@ -77,6 +79,12 @@ export const useEditor = create<EditorState>()((set, get) => {
       lastEdit = null;
       const graph = toGraph(flow);
       set({ graph, past: [], future: [], saved: serialize(graph), issues: [], selectedNodeId: null });
+    },
+
+    replace: (flow) => {
+      lastEdit = null;
+      edit(toGraph(flow));
+      set({ selectedNodeId: null });
     },
 
     addNode: (type, x, y) => {

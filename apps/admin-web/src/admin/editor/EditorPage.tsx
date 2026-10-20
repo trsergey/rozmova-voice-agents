@@ -102,6 +102,7 @@ export function EditorPage() {
       <Toolbar
         botId={botId}
         botName={bot.data.name}
+        liveVersion={bot.data.live_version ?? null}
         canEdit={canEdit}
         dirty={dirty}
         saving={save.isPending}
@@ -141,6 +142,7 @@ export function EditorPage() {
 function Toolbar(props: {
   botId: string;
   botName: string;
+  liveVersion: number | null;
   canEdit: boolean;
   dirty: boolean;
   saving: boolean;
@@ -167,7 +169,8 @@ function Toolbar(props: {
             : "Чернетку ще не зберігали"}
       </span>
       {props.canEdit && (
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
+          {props.liveVersion != null && <RestoreLive botId={props.botId} version={props.liveVersion} />}
           <Button variant={props.consoleOpen ? "primary" : "secondary"} onClick={props.onToggleConsole} aria-pressed={props.consoleOpen}>
             {props.consoleOpen ? "Сховати тест" : "Тестувати"}
           </Button>
@@ -266,6 +269,48 @@ function IssuesPanel({ warnings, checking }: { warnings: FlowIssue[]; checking: 
         </>
       )}
     </aside>
+  );
+}
+
+// Start over from what is live: the version's flow replaces the canvas as one step, which
+// "Скасувати" takes back; nothing reaches the server until the draft is saved.
+function RestoreLive({ botId, version }: { botId: string; version: number }) {
+  const [open, setOpen] = useState(false);
+  const restore = useMutation({
+    mutationFn: () =>
+      unwrap(client.GET("/bots/{bot_id}/versions/{version}", { params: { path: { bot_id: botId, version } } })),
+    onSuccess: (live) => {
+      useEditor.getState().replace(live.flow);
+      setOpen(false);
+    },
+  });
+
+  return (
+    <AlertDialog.Root open={open} onOpenChange={setOpen}>
+      <AlertDialog.Trigger asChild>
+        <Button variant="secondary">Відновити з v{version}</Button>
+      </AlertDialog.Trigger>
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="fixed inset-0 bg-black/40" />
+        <AlertDialog.Content className="fixed top-1/2 left-1/2 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-line bg-surface p-5 text-fg shadow-xl">
+          <AlertDialog.Title className="text-lg font-semibold">Відновити з v{version}?</AlertDialog.Title>
+          <AlertDialog.Description className="mt-2 text-sm text-fg-muted">
+            Схему на полотні буде замінено опублікованою v{version}. Це можна скасувати кнопкою «Скасувати»;
+            у чернетку вона потрапить лише після збереження.
+          </AlertDialog.Description>
+          {restore.isError && <ErrorText>Не вдалося завантажити v{version}.</ErrorText>}
+          <div className="mt-5 flex justify-end gap-2">
+            <AlertDialog.Cancel asChild>
+              <Button variant="secondary">Ні</Button>
+            </AlertDialog.Cancel>
+            {/* Not AlertDialog.Action: the dialog stays open until the version has loaded. */}
+            <Button onClick={() => restore.mutate()} disabled={restore.isPending}>
+              Відновити
+            </Button>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
 }
 

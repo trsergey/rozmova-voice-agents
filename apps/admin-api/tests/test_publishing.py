@@ -357,3 +357,20 @@ def test_usages_find_versions_drafts_and_tool_nodes(setup: Setup) -> None:
     assert {u["bot_id"]: u["versions"] for u in balance.json()} == {support: [2, 1], other: []}
     assert nowhere.json() == []
     assert setup.viewer.http.get("/search/usages").status_code == 422
+
+
+@pytest.mark.integration
+def test_one_version_with_its_flow(setup: Setup) -> None:
+    bot_id = setup.new_bot(DEMO_FLOW)
+    setup.publish(bot_id, note="first")
+    setup.save_draft(bot_id, with_greeting("Привіт!"))
+
+    response = setup.viewer.http.get(f"/bots/{bot_id}/versions/1")
+    missing = setup.viewer.http.get(f"/bots/{bot_id}/versions/9")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["version"], body["note"]) == (1, "first")
+    # The published flow, not the draft saved after it; canvas positions come with it.
+    assert FlowGraph.model_validate(body["flow"]).same_logic(FlowGraph.model_validate(DEMO_FLOW))
+    assert (missing.status_code, missing.json()["error"]["code"]) == (404, "version_not_found")

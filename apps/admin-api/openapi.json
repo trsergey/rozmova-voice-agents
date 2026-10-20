@@ -795,6 +795,59 @@
         }
       }
     },
+    "/bots/{bot_id}/versions/{version}": {
+      "get": {
+        "tags": [
+          "versions"
+        ],
+        "summary": "Read Version",
+        "description": "One version with its flow, e.g. for the editor to start over from what is live.",
+        "operationId": "read_version_bots__bot_id__versions__version__get",
+        "parameters": [
+          {
+            "name": "bot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Bot Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionFlowOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/bots/{bot_id}/versions/{a}/diff/{b}": {
       "get": {
         "tags": [
@@ -3377,6 +3430,60 @@
         ],
         "title": "VersionEvalOut",
         "description": "The eval that let a version go live; ``None`` on versions from before the gate,\nfrom the seed or published with the gate bypassed."
+      },
+      "VersionFlowOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "flow": {
+            "$ref": "#/components/schemas/FlowGraph"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "note",
+          "created_at",
+          "created_by",
+          "flow"
+        ],
+        "title": "VersionFlowOut"
       },
       "VersionItemOut": {
         "properties": {

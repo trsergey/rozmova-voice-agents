@@ -170,3 +170,71 @@ test("viewers see the canvas read-only", async () => {
   expect(screen.queryByRole("complementary", { name: "Палітра" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Зберегти чернетку" })).not.toBeInTheDocument();
 });
+
+// The live v2: the demo flow without the promo step, its operator route straight to handoff.
+const liveFlow = {
+  nodes: demo.nodes.filter((node) => node.id !== "promo"),
+  edges: demo.edges
+    .filter((edge) => edge.source !== "promo")
+    .map((edge) => (edge.target === "promo" ? { ...edge, target: "operator" } : edge)),
+};
+const withLive = (extra: Record<string, Route> = {}) =>
+  api(ADMIN, {
+    "GET /bots/b-1": ok({ ...BOT, live_version_id: "v-2", live_version: 2 }),
+    "GET /bots/b-1/versions/2": ok({
+      id: "v-2",
+      version: 2,
+      note: null,
+      created_at: "2026-10-19T08:00:00Z",
+      created_by: null,
+      flow: liveFlow,
+    }),
+    ...extra,
+  });
+
+test("restoring from the live version replaces the canvas in one undoable step", async () => {
+  const calls = fakeApi(withLive());
+  open("/admin/bots/b-1/editor");
+  expect(await screen.findByTestId("node-promo")).toBeInTheDocument();
+
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Відновити з v2" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(dialog).toHaveTextContent("Схему на полотні буде замінено опублікованою v2");
+  await user.click(within(dialog).getByRole("button", { name: "Відновити" }));
+
+  await vi.waitFor(() => expect(screen.queryByTestId("node-promo")).not.toBeInTheDocument());
+  expect(screen.getByRole("status")).toHaveTextContent("Є незбережені зміни");
+  // Nothing is saved until the author saves.
+  expect(calls.some((call) => call.key === "PUT /bots/b-1/draft")).toBe(false);
+
+  await user.click(screen.getByRole("button", { name: "Скасувати" }));
+  expect(await screen.findByTestId("node-promo")).toBeInTheDocument();
+  expect(screen.getByRole("status")).not.toHaveTextContent("незбережені");
+});
+
+test("a restored draft is saved like any edit", async () => {
+  const calls = fakeApi(withLive());
+  open("/admin/bots/b-1/editor");
+  await screen.findByTestId("node-promo");
+
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Відновити з v2" }));
+  await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Відновити" }));
+  await vi.waitFor(() => expect(screen.queryByTestId("node-promo")).not.toBeInTheDocument());
+  await user.click(screen.getByRole("button", { name: "Зберегти чернетку" }));
+
+  await vi.waitFor(() => expect(calls.some((call) => call.key === "PUT /bots/b-1/draft")).toBe(true));
+  const put = calls.find((call) => call.key === "PUT /bots/b-1/draft");
+  const body = put?.body as { nodes: { id: string }[]; edges: unknown[] };
+  expect(body.nodes.map((n) => n.id)).toEqual(liveFlow.nodes.map((n) => n.id));
+  expect(body.edges).toEqual(liveFlow.edges);
+});
+
+test("a bot that was never published offers no restore", async () => {
+  fakeApi(api());
+  open("/admin/bots/b-1/editor");
+  await screen.findByTestId("node-assist");
+
+  expect(screen.queryByRole("button", { name: /Відновити з/ })).not.toBeInTheDocument();
+});

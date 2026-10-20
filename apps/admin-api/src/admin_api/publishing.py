@@ -12,8 +12,9 @@ so the history shows every change of the live flow. It leaves the draft alone.
 Publish also needs a green eval of the current draft (``admin_api.evals``, FR-19), whose
 report the version keeps; a rollback copies the old version's report with its flow.
 
-Everyone logged in reads the history and the diff between two versions, or between a
-version and the draft (``…/diff/draft``: what the next publish would change; FR-12).
+Everyone logged in reads the history, one version with its flow, and the diff between two
+versions, or between a version and the draft (``…/diff/draft``: what the next publish would
+change; FR-12).
 """
 
 import uuid
@@ -86,6 +87,10 @@ def _version_eval(version: BotVersion) -> VersionEvalOut | None:
         cases_passed=report.summary.cases_passed,
         finished_at=report.finished_at,
     )
+
+
+class VersionFlowOut(VersionOut):
+    flow: FlowGraph
 
 
 class VersionDiffOut(BaseModel):
@@ -190,6 +195,24 @@ async def list_versions(
             )
             for version, email in rows
         ]
+
+
+@router.get("/{bot_id}/versions/{version}")
+async def read_version(
+    bot_id: uuid.UUID, version: int, request: Request, _: CurrentSession
+) -> VersionFlowOut:
+    """One version with its flow, e.g. for the editor to start over from what is live."""
+    async with _db(request)() as db:
+        await get_bot(db, bot_id)
+        found = await _version(db, bot_id, version)
+        return VersionFlowOut(
+            id=found.id,
+            version=found.version,
+            note=found.note,
+            created_at=found.created_at,
+            created_by=found.created_by,
+            flow=FlowGraph.model_validate(found.flow),
+        )
 
 
 @router.get("/{bot_id}/versions/{a}/diff/{b}")
