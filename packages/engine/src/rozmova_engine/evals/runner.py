@@ -7,8 +7,9 @@ the judge need. Turns after the call has ended (handoff or goodbye) are skipped.
 """
 
 import asyncio
+import inspect
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 import structlog
@@ -165,16 +166,17 @@ async def run_cases(
     cases: list[EvalCase],
     *,
     concurrency: int = DEFAULT_CONCURRENCY,
-    on_done: Callable[[CaseRun], None] | None = None,
+    on_done: Callable[[CaseRun], Awaitable[None] | None] | None = None,
 ) -> list[CaseRun]:
-    """Run the cases ``concurrency`` at a time; results keep the order of ``cases``."""
+    """Run the cases ``concurrency`` at a time; results keep the order of ``cases``.
+    ``on_done`` sees each finished case (the CLI prints it, admin-api counts progress)."""
     semaphore = asyncio.Semaphore(concurrency)
 
     async def one(case: EvalCase) -> CaseRun:
         async with semaphore:
             run = await run_case(bot, case)
-        if on_done is not None:
-            on_done(run)
+        if on_done is not None and inspect.isawaitable(done := on_done(run)):
+            await done
         return run
 
     async with asyncio.TaskGroup() as group:

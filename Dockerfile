@@ -82,12 +82,16 @@ COPY flows/hvylia-demo.json /app/flows/hvylia-demo.json
 # The knowledge base admin-api ingests on start (ROZ-27) and its tokenizer file.
 COPY kb /app/kb
 COPY --from=build-admin-api /app/tiktoken /app/tiktoken
+# The eval set admin-api runs over a draft before publish (ROZ-73).
+COPY evals/cases /app/evals/cases
+COPY evals/thresholds.yaml /app/evals/thresholds.yaml
 COPY --from=build-web /src/apps/admin-web/dist /app/admin-web
 ENV PORT=8000 \
     ROZMOVA_ADMIN_WEB_DIR=/app/admin-web \
     ROZMOVA_SERVICE_NAME=admin-api \
     ROZMOVA_DEMO_FLOW_PATH=/app/flows/hvylia-demo.json \
     ROZMOVA_KB_PATH=/app/kb \
+    ROZMOVA_EVALS_PATH=/app/evals \
     ROZMOVA_KB_INGEST_ON_START=true \
     TIKTOKEN_CACHE_DIR=/app/tiktoken
 USER app

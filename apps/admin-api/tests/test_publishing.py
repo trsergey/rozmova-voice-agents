@@ -49,6 +49,8 @@ async def settings(database_url: SecretStr) -> Settings:
         demo_seed=False,
         admin_email=ADMIN["email"],
         admin_password=SecretStr(ADMIN["password"]),
+        # The eval gate has its own tests (test_evals.py); here publish is about versions.
+        eval_gate_bypass=True,
     )
     engine = create_engine(settings)
     async with create_session_factory(engine)() as db, db.begin():

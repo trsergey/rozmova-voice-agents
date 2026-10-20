@@ -964,6 +964,92 @@
         }
       }
     },
+    "/bots/{bot_id}/evals": {
+      "post": {
+        "tags": [
+          "evals"
+        ],
+        "summary": "Start Eval",
+        "operationId": "start_eval_bots__bot_id__evals_post",
+        "parameters": [
+          {
+            "name": "bot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Bot Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalJobStarted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/evals/{job_id}": {
+      "get": {
+        "tags": [
+          "evals"
+        ],
+        "summary": "Get Eval",
+        "operationId": "get_eval_evals__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/search/usages": {
       "get": {
         "tags": [
@@ -2004,6 +2090,105 @@
         ],
         "title": "EndNode",
         "description": "Says farewell and ends the call."
+      },
+      "EvalJobOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "bot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bot Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "draft_hash": {
+            "type": "string",
+            "title": "Draft Hash"
+          },
+          "cases_total": {
+            "type": "integer",
+            "title": "Cases Total"
+          },
+          "cases_done": {
+            "type": "integer",
+            "title": "Cases Done",
+            "default": 0
+          },
+          "passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "bot_id",
+          "state",
+          "draft_hash",
+          "cases_total",
+          "started_at"
+        ],
+        "title": "EvalJobOut"
+      },
+      "EvalJobStarted": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "EvalJobStarted"
       },
       "EvalSummaryOut": {
         "properties": {
@@ -3162,6 +3347,36 @@
         ],
         "title": "VersionDiffOut"
       },
+      "VersionEvalOut": {
+        "properties": {
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "cases": {
+            "type": "integer",
+            "title": "Cases"
+          },
+          "cases_passed": {
+            "type": "integer",
+            "title": "Cases Passed"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "passed",
+          "cases",
+          "cases_passed",
+          "finished_at"
+        ],
+        "title": "VersionEvalOut",
+        "description": "The eval that let a version go live; ``None`` on versions from before the gate,\nfrom the seed or published with the gate bypassed."
+      },
       "VersionItemOut": {
         "properties": {
           "id": {
@@ -3215,6 +3430,16 @@
           "live": {
             "type": "boolean",
             "title": "Live"
+          },
+          "eval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionEvalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

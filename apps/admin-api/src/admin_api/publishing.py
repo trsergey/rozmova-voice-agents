@@ -9,17 +9,20 @@ to, and the failure is logged.
 Rollback never moves the pointer back: it creates version n+1 with the old flow and a note,
 so the history shows every change of the live flow. It leaves the draft alone.
 
+Publish also needs a green eval of the current draft (``admin_api.evals``, FR-19), whose
+report the version keeps; a rollback copies the old version's report with its flow.
+
 Everyone logged in reads the history and the diff between two versions, or between a
 version and the draft (``…/diff/draft``: what the next publish would change; FR-12).
 """
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Path, Request
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import func, select
@@ -28,9 +31,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from admin_api.auth import AdminOnly, CurrentSession
 from admin_api.bots import KNOWN_TOOLS, draft_flow, get_bot
 from admin_api.errors import ApiError
+from admin_api.evals import require_green_eval
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import live_bots
 from rozmova_core.models import Bot, BotVersion, User
+from rozmova_core.settings import Settings
+from rozmova_engine.evals.report import EvalReport
 from rozmova_engine.flow import FlowDiff, diff_flows, validate_flow
 
 log = structlog.get_logger(__name__)
@@ -50,9 +56,36 @@ class VersionOut(BaseModel):
     created_by: uuid.UUID | None
 
 
+class VersionEvalOut(BaseModel):
+    """The eval that let a version go live; ``None`` on versions from before the gate,
+    from the seed or published with the gate bypassed."""
+
+    passed: bool
+    cases: int
+    cases_passed: int
+    finished_at: datetime
+
+
 class VersionItemOut(VersionOut):
     created_by_email: str | None
     live: bool
+    eval: VersionEvalOut | None = None
+
+
+def _version_eval(version: BotVersion) -> VersionEvalOut | None:
+    if version.eval_report is None:
+        return None
+    try:
+        report = EvalReport.model_validate(version.eval_report)
+    except ValidationError:
+        log.warning("eval_report_unreadable", version_id=str(version.id))
+        return None
+    return VersionEvalOut(
+        passed=report.summary.passed,
+        cases=report.summary.cases,
+        cases_passed=report.summary.cases_passed,
+        finished_at=report.finished_at,
+    )
 
 
 class VersionDiffOut(BaseModel):
@@ -74,7 +107,12 @@ async def _live_flow(db: AsyncSession, bot: Bot) -> FlowGraph | None:
 
 
 async def make_live(
-    db: AsyncSession, bot: Bot, flow: FlowGraph, note: str | None, admin_id: str | None
+    db: AsyncSession,
+    bot: Bot,
+    flow: FlowGraph,
+    note: str | None,
+    admin_id: str | None,
+    eval_report: dict[str, Any] | None = None,
 ) -> BotVersion:
     """Append version n+1 with ``flow`` and point the bot at it. The bot row must be locked."""
     live = await _live_flow(db, bot)
@@ -88,6 +126,7 @@ async def make_live(
         version=(last or 0) + 1,
         flow=flow.model_dump(mode="json"),
         note=note,
+        eval_report=eval_report,
         created_by=uuid.UUID(admin_id) if admin_id else None,
     )
     db.add(version)
@@ -147,6 +186,7 @@ async def list_versions(
                 created_by=version.created_by,
                 created_by_email=email,
                 live=version.id == bot.live_version_id,
+                eval=_version_eval(version),
             )
             for version, email in rows
         ]
@@ -188,8 +228,9 @@ async def publish(
                 f"The draft has {len(result.errors)} error(s); fix them before publishing.",
                 {"errors": [issue.model_dump(mode="json") for issue in result.errors]},
             )
-        # ROZ-73 adds the eval gate here: a green report for flow.logic_hash().
-        version = await make_live(db, bot, flow, body.note or None, admin.user_id)
+        settings: Settings = request.app.state.settings
+        report = None if settings.eval_gate_bypass else require_green_eval(bot, flow)
+        version = await make_live(db, bot, flow, body.note or None, admin.user_id, report)
     await announce_live(request.app.state.redis, bot, version)
     log.info("published", bot_id=str(bot_id), version=version.version, user_id=admin.user_id)
     return VersionOut.model_validate(version)
@@ -203,7 +244,9 @@ async def rollback(
         bot = await get_bot(db, bot_id, for_update=True)
         target = await _version(db, bot_id, version)
         flow = FlowGraph.model_validate(target.flow)
-        created = await make_live(db, bot, flow, f"rollback of v{version}", admin.user_id)
+        created = await make_live(
+            db, bot, flow, f"rollback of v{version}", admin.user_id, target.eval_report
+        )
     await announce_live(request.app.state.redis, bot, created)
     log.info(
         "rolled_back",

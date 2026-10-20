@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from gateway.app import create_app
-from gateway.bots import DemoKeySettings, Providers, PublishedBotLoader
+from gateway.bots import PublishedBotLoader
 from gateway.calls import Calls
 from rozmova_core.credentials import CredentialCipher
 from rozmova_core.db import create_engine, create_session_factory
@@ -25,6 +25,7 @@ from rozmova_core.log import configure_logging
 from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
 from rozmova_core.telemetry import init_telemetry, shutdown_telemetry
+from rozmova_engine.providers.keys import DemoKeySettings, Providers
 from rozmova_engine.rag.answer import KnowledgeBase, KnowledgeSearch, UnavailableKnowledgeBase
 from rozmova_engine.rag.embeddings import OpenAIEmbedder
 

@@ -78,6 +78,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "ROZMOVA_OPENAI_API_KEY"),
     )
 
+    # Evals over a draft in admin-api (FR-19, ROZ-73): cases and thresholds under evals_path.
+    # Publish needs a green eval of the current draft unless the gate is bypassed.
+    evals_path: Path = Path("evals")
+    eval_gate_bypass: bool = False
+
     # Per-user demo limits (SDD "Безпека та контроль витрат"), keyed by user_id from the ticket.
     limit_messages_per_minute: int = Field(default=20, ge=1)
     limit_sessions_per_user: int = Field(default=3, ge=1)

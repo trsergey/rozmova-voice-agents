@@ -352,6 +352,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bots/{bot_id}/evals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Eval */
+        post: operations["start_eval_bots__bot_id__evals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval */
+        get: operations["get_eval_evals__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search/usages": {
         parameters: {
             query?: never;
@@ -751,6 +785,52 @@ export interface components {
              */
             type: "end";
             data: components["schemas"]["EndData"];
+        };
+        /** EvalJobOut */
+        EvalJobOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Bot Id
+             * Format: uuid
+             */
+            bot_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "done" | "failed";
+            /** Draft Hash */
+            draft_hash: string;
+            /** Cases Total */
+            cases_total: number;
+            /**
+             * Cases Done
+             * @default 0
+             */
+            cases_done: number;
+            /** Passed */
+            passed?: boolean | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /** EvalJobStarted */
+        EvalJobStarted: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
         };
         /** EvalSummaryOut */
         EvalSummaryOut: {
@@ -1228,6 +1308,24 @@ export interface components {
             after: number | null;
             diff: components["schemas"]["FlowDiff"];
         };
+        /**
+         * VersionEvalOut
+         * @description The eval that let a version go live; ``None`` on versions from before the gate,
+         *     from the seed or published with the gate bypassed.
+         */
+        VersionEvalOut: {
+            /** Passed */
+            passed: boolean;
+            /** Cases */
+            cases: number;
+            /** Cases Passed */
+            cases_passed: number;
+            /**
+             * Finished At
+             * Format: date-time
+             */
+            finished_at: string;
+        };
         /** VersionItemOut */
         VersionItemOut: {
             /**
@@ -1250,6 +1348,7 @@ export interface components {
             created_by_email: string | null;
             /** Live */
             live: boolean;
+            eval?: components["schemas"]["VersionEvalOut"] | null;
         };
         /** VersionOut */
         VersionOut: {
@@ -1930,6 +2029,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_eval_bots__bot_id__evals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalJobStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_evals__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalJobOut"];
                 };
             };
             /** @description Validation Error */

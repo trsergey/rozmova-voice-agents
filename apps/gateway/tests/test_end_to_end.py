@@ -19,7 +19,7 @@ import websockets
 from pydantic import SecretStr
 
 from gateway.app import create_app
-from gateway.bots import Providers, PublishedBotLoader
+from gateway.bots import PublishedBotLoader
 from rozmova_core import tickets
 from rozmova_core.call_events import STREAM
 from rozmova_core.db import create_engine, create_session_factory
@@ -28,6 +28,7 @@ from rozmova_core.redis_client import create_redis
 from rozmova_core.settings import Settings
 from rozmova_engine.providers import LLMProvider, ToolCall
 from rozmova_engine.providers.fake import FakeProvider, text_turn
+from rozmova_engine.providers.keys import Providers
 
 pytestmark = pytest.mark.integration
 

@@ -1,5 +1,6 @@
 """The eval runner on the demo flow with a scripted LLM, a fake KB and a fake judge."""
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -230,6 +231,20 @@ async def test_cases_run_concurrently_and_keep_their_order() -> None:
 
     assert [run.case.id for run in runs] == ["c0", "c1", "c2"]
     assert sorted(done) == ["c0", "c1", "c2"]
+
+
+async def test_on_done_may_be_a_coroutine() -> None:
+    """admin-api counts progress in Redis from ``on_done``."""
+    cases = [case(id=f"c{i}", turns=[{"user": "привіт", "reference": "x"}]) for i in range(2)]
+    done: list[str] = []
+
+    async def record(run: CaseRun) -> None:
+        await asyncio.sleep(0)
+        done.append(run.case.id)
+
+    await run_cases(bot(text_turn("Вітаю!"), text_turn("Вітаю!")), cases, on_done=record)
+
+    assert sorted(done) == ["c0", "c1"]
 
 
 # --- judging and the report ----------------------------------------------------------------

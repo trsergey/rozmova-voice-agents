@@ -31,6 +31,7 @@ async def settings(database_url: SecretStr) -> Settings:
         admin_email=ADMIN["email"],
         admin_password=SecretStr(ADMIN["password"]),
         demo_flow_path=DEMO_FLOW_PATH,
+        eval_gate_bypass=True,  # an admin publish here is about the seed, not the gate
     )
     engine = create_engine(settings)
     async with create_session_factory(engine)() as db, db.begin():

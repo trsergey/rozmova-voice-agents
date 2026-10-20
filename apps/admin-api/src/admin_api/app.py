@@ -1,8 +1,8 @@
 """FastAPI app of the admin API: health check, auth, access codes, call tickets, bots,
-drafts, publish and rollback, provider keys, the knowledge base, the call log and the ops
-summary; version history comes with its ticket. It also serves the built admin-web
-(``spa``), and persists the gateway's call events into the call log in the background
-(ROZ-62)."""
+drafts, evals over a draft, publish and rollback, version history and diff, tool usages,
+provider keys, the knowledge base, the call log and the ops summary. It also serves the
+built admin-web (``spa``), and persists the gateway's call events into the call log in the
+background (ROZ-62)."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,6 +19,7 @@ from admin_api import (
     calls,
     credentials,
     errors,
+    evals,
     kb,
     ops,
     publishing,
@@ -33,10 +34,19 @@ from rozmova_core.db import create_session_factory
 from rozmova_core.settings import Settings
 
 
-def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI:
-    """The app owns ``engine`` and ``redis`` and closes them on shutdown."""
+def create_app(
+    settings: Settings,
+    engine: AsyncEngine,
+    redis: Redis,
+    *,
+    eval_runtime: evals.EvalRuntime | None = None,
+) -> FastAPI:
+    """The app owns ``engine`` and ``redis`` and closes them on shutdown. ``eval_runtime``
+    replaces the LLM clients and knowledge base of eval runs (tests script them)."""
     factory = create_session_factory(engine)
     indexer = kb.KbIndexer(settings, engine)
+    runtime = eval_runtime or evals.default_runtime(settings, factory)
+    eval_jobs = evals.EvalJobs(settings.evals_path, redis, factory, runtime)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -50,6 +60,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
             yield
         finally:
             await stop_call_log(call_log)
+            await eval_jobs.aclose()
             await indexer.aclose()
             await redis.aclose()
             await engine.dispose()
@@ -59,6 +70,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.state.db = factory
     app.state.redis = redis
     app.state.kb = indexer
+    app.state.evals = eval_jobs
     app.state.ops_cache = ops.SummaryCache()
     app.state.cipher = CredentialCipher.from_settings(settings)
     app.state.sessions = SessionStore(redis, settings.admin_session_ttl_seconds)
@@ -71,6 +83,7 @@ def create_app(settings: Settings, engine: AsyncEngine, redis: Redis) -> FastAPI
     app.include_router(bots.router)
     app.include_router(bots.providers_router)
     app.include_router(publishing.router)
+    app.include_router(evals.router)
     app.include_router(usages.router)
     app.include_router(credentials.router)
     app.include_router(kb.router)

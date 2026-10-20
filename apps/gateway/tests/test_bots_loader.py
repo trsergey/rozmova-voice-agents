@@ -14,7 +14,7 @@ from pydantic import SecretStr
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from gateway.bots import BotUnavailableError, Providers, PublishedBotLoader
+from gateway.bots import BotUnavailableError, PublishedBotLoader
 from rozmova_contracts.flow import FlowGraph
 from rozmova_core import live_bots
 from rozmova_core.credentials import CredentialCipher, CredentialError
@@ -23,6 +23,7 @@ from rozmova_core.models import Bot, BotVersion, ProviderCredential
 from rozmova_core.settings import Settings
 from rozmova_engine.providers import ProviderConfig, registry
 from rozmova_engine.providers.fake import FakeProvider
+from rozmova_engine.providers.keys import Providers
 
 DEMO_FLOW: dict[str, Any] = json.loads(
     (Path(__file__).resolve().parents[3] / "flows/hvylia-demo.json").read_text(encoding="utf-8")
