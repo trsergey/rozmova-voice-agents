@@ -12,11 +12,14 @@ export type Role = Schemas["UserOut"]["role"];
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  // admin-api's `error.details`, e.g. the gate's `reason` or a draft's validation errors.
+  readonly details: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -39,11 +42,15 @@ interface Result<T> {
 }
 
 // The data of a successful call, or an ApiError: admin-api errors are
-// {"error": {"code", "message"}} (admin_api.errors), validation errors {"detail": [...]}.
+// {"error": {"code", "message", "details"?}} (admin_api.errors), request validation errors
+// {"detail": [...]}.
 export async function unwrap<T>(call: Promise<Result<T>>): Promise<T> {
   const { data, error, response } = await call;
   if (response.ok) return data as T;
-  const body = (error ?? {}) as { error?: { code?: string; message?: string } };
+  const body = (error ?? {}) as { error?: { code?: string; message?: string; details?: Record<string, unknown> } };
+  if (body.error?.code) {
+    throw new ApiError(response.status, body.error.code, body.error.message ?? response.statusText, body.error.details);
+  }
   if (response.status === 422) throw new ApiError(422, "invalid_request", "Перевірте введені дані.");
-  throw new ApiError(response.status, body.error?.code ?? "http_error", body.error?.message ?? response.statusText);
+  throw new ApiError(response.status, "http_error", response.statusText);
 }

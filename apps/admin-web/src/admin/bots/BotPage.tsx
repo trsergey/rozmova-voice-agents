@@ -1,5 +1,6 @@
-// One bot: what is live, the draft and its last eval, and the provider keys (FR-17), which
-// are write-only: the page shows their last 4 characters and never gets a key back.
+// One bot: what is live, the draft and its last eval, publishing and the version history
+// (./Publishing), and the provider keys (FR-17), which are write-only: the page shows their
+// last 4 characters and never gets a key back.
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
 
@@ -7,6 +8,7 @@ import { ApiError } from "../../api/client";
 import { formatDateTime } from "../format";
 import { AdminOnly } from "../guards";
 import { Badge, Button, Card, ErrorText, Field, Input, PageHeader, Select } from "../ui";
+import { PublishCard, VersionsCard } from "./Publishing";
 import { useBot, useCredentials, useProviders, usePutCredential, type BotDetail } from "./queries";
 
 export function BotPage() {
@@ -53,6 +55,10 @@ export function BotPage() {
         <Card title="Останній eval">
           <LastEval bot={bot.data} />
         </Card>
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <PublishCard bot={bot.data} />
+        <VersionsCard botId={botId} />
       </div>
       <div className="mt-6 max-w-xl">
         <Credentials botId={botId} botProvider={bot.data.provider} />

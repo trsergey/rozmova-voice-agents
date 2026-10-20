@@ -25,6 +25,9 @@ const api = (session = ADMIN, extra: Record<string, Route> = {}) => ({
   "GET /providers": ok(["anthropic", "openai"]),
   "GET /bots/b-1": ok({ ...LIVE, last_eval: EVAL }),
   "GET /bots/b-1/credentials": ok([]),
+  "GET /bots/b-1/versions": ok([]),
+  "POST /bots/b-1/validate": ok({ ok: true, errors: [], warnings: [] }),
+  "GET /bots/b-1/versions/3/diff/draft": ok({ before: 3, after: null, diff: { nodes: [], edges: [] } }),
   ...extra,
 });
 
