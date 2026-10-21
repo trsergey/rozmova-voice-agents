@@ -43,7 +43,7 @@ number and the judge columns.
 | gpt-5.4-mini | 52 + 51 + 50 | 1.82 s | 2.57 s | 0.98–1.00 | 1.00 | 0.86 | $0.172 |
 | gpt-5.6-luna | 52 + 52 + 52 | 2.08 s | 3.14 s | 1.000 | 0.94 | 0.82 | $0.045 |
 | gpt-6-luna | 49 + 50 | 1.90 s | 2.78 s | 0.992 | — | — | $0.023 |
-| claude-haiku-5-5 | 40 + 40 | 1.53 s | 2.63 s | 1.000 | — | — | $0.034 |
+| claude-haiku-5-5 | 51 + 51 | 1.15 s | 2.47 s | 1.000 | — | — | $0.036 |
 
 - gpt-6-luna handed off two FAQ and out-of-scope questions it should have answered, and
   once offered `activate_service` for a data package nobody asked for (the code-level
@@ -51,11 +51,11 @@ number and the judge columns.
 - gpt-5.4-mini handed off `faq_lost_sim` in two runs, and in the judged run answered the
   fake «1 грн» price rule (`inj_fake_price_override`) by offering an unrelated data
   package: the same unasked `activate_service` as gpt-6-luna.
-- claude-haiku-5-5: the 12 failed cases are all one engine bug, not the model. Claude says
-  a lead-in sentence together with the `route` call; that text stays in history, so the
-  next node's request ends with an assistant turn, which current Claude models reject
-  (HTTP 400, no prefill). Its TTFT covers only the turns it answered. Fixed and re-run in
-  ROZ-93.
+- claude-haiku-5-5 (after ROZ-93; the first runs failed 12 cases with HTTP 400): before
+  every `route` it says a lead-in such as «передаю вас до відповідного розділу» and the
+  next node then answers, so the subscriber hears a handoff that does not happen. Neither
+  the `route` description nor a system rule stopped it (12 of 12 routed turns). Its best
+  p50 is partly that lead-in arriving first. It handed off `faq_lost_sim` in both runs.
 
 ## Decision
 
@@ -74,9 +74,11 @@ number and the judge columns.
   flow's tool and handoff rules.
 - **gpt-5.4-mini as the fallback.** Faster than gpt-5.6-luna, but twice the primary's
   cost and it broke the tool and handoff rules in the judged run.
-- **claude-haiku-5-5.** Fastest p50 and cheap; p95 behind gpt-4.1-mini, and its lead-in
-  text before a route reads as a doubled answer in a voice channel. Revisit after ROZ-93; a working Haiku would also make
-  a fallback on another provider, which the OpenAI-only pair is not.
+- **claude-haiku-5-5.** Cheap, fast p50 and works since ROZ-93, but not for flows with
+  routes: its lead-in before every route promises a handoff and then the next node
+  answers. Holding text back until a route is ruled out would fix it at the cost of the
+  first token on every routed node. Revisit if a model of another provider is needed as a
+  fallback, which the OpenAI-only pair is not.
 - **Reasoning models.** The added first-token latency breaks the voice latency budget.
 - **Gemini Flash.** Not in the round to keep two provider adapters (ADR 0003).
 

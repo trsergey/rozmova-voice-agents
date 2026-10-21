@@ -13,6 +13,10 @@ Behaviour worth knowing:
   and the common ``Message`` cannot carry thinking blocks, which the API expects back
   unchanged in a tool round. Models that reject ``{"type": "disabled"}`` (Claude Opus 5.5,
   Claude Sonnet 5.5) are therefore not supported in the MVP;
+- the request never ends with an assistant turn, which current Claude models reject as a
+  prefill (HTTP 400). That happens when the LLM spoke before calling ``route`` and the
+  next node asks again (ROZ-93): the trailing assistant text moves into ``system`` as
+  "already said this turn", so history stays true and the model does not repeat it;
 - a ``refusal`` or a ``max_tokens`` stop that cuts a tool call short fails the attempt
   with a non-retryable ``ProviderError``: the same request would end the same way.
 """
@@ -55,6 +59,10 @@ from rozmova_engine.providers.retry import RetryPolicy, stream_with_retries
 DEFAULT_TIMEOUT_S = 60.0
 # Spoken replies are short; this caps a runaway answer, not a normal one.
 DEFAULT_MAX_TOKENS = 1024
+# Assistant text that would end the request; the subscriber has already heard it.
+ALREADY_SAID = (
+    "У цьому ході ти вже сказав абонентові: «{text}». Продовж відповідь, не повторюючи цього."
+)
 
 _RETRYABLE_STATUS = frozenset({408, 409, 429})
 _RETRYABLE_STREAM_ERRORS = frozenset({"overloaded_error", "api_error", "rate_limit_error"})
@@ -222,6 +230,12 @@ def _to_wire_messages(messages: Sequence[Message]) -> tuple[str, list[MessagePar
                 # The API rejects empty assistant turns; an empty one carries nothing anyway.
                 if content:
                     wire.append({"role": "assistant", "content": content})
+    said: list[str] = []
+    while wire and wire[-1]["role"] == "assistant":
+        blocks = wire.pop()["content"]
+        said[:0] = [b["text"] for b in blocks if isinstance(b, dict) and b["type"] == "text"]
+    if said:
+        system.append(ALREADY_SAID.format(text=" ".join(said)))
     return "\n\n".join(system), wire
 
 

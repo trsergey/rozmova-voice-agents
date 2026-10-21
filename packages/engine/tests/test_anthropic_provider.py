@@ -181,6 +181,30 @@ async def test_history_is_sent_in_anthropic_format() -> None:
     ]
 
 
+async def test_trailing_assistant_text_moves_into_system() -> None:
+    # The LLM spoke before calling route; the next node's request would end with it.
+    messages = [
+        Message(role="system", content="Ти асистент оператора Hvylia Mobile."),
+        Message(role="assistant", content="Вітаю! Чим можу допомогти?"),
+        USER,
+        Message(role="assistant", content="Зараз перевірю."),
+        Message(role="assistant", content="Хвилинку."),
+    ]
+    server = Server(sse("text.sse"))
+    await collect(make_provider(server), messages=messages)
+
+    body = server.body()
+    assert body["messages"] == [
+        {"role": "assistant", "content": [{"type": "text", "text": "Вітаю! Чим можу допомогти?"}]},
+        {"role": "user", "content": "Який у мене баланс?"},
+    ]
+    assert body["system"] == (
+        "Ти асистент оператора Hvylia Mobile.\n\n"
+        "У цьому ході ти вже сказав абонентові: «Зараз перевірю. Хвилинку.». "
+        "Продовж відповідь, не повторюючи цього."
+    )
+
+
 async def test_malformed_tool_input_is_retried_before_the_first_event() -> None:
     server = Server(sse("malformed_tool_input.sse"), sse("tool_use.sse"))
     sleeps = Sleeps()
