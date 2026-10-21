@@ -29,12 +29,18 @@ def test_pages_and_assets_are_served(tmp_path: Path) -> None:
     page = http.get("/demo/")
     assert page.status_code == 200
     assert page.headers["content-type"].startswith("text/html")
-    assert page.headers["cache-control"] == "no-cache"
+    # no-store: a back/forward visit must not bring back a page naming old chunks.
+    assert page.headers["cache-control"] == "no-store"
     assert 'id="root"' in page.text
 
     asset = http.get("/assets/index-abc.js")
     assert asset.status_code == 200
-    assert http.get("/assets/missing.js").status_code == 404
+    assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
+    # A chunk of an older deploy: a plain 404 (the client reloads), not the page.
+    missing = http.get("/assets/BotPage-old.js")
+    assert missing.status_code == 404
+    assert "cache-control" not in missing.headers
+    assert 'id="root"' not in missing.text
 
 
 def test_client_routes_fall_back_to_the_page(tmp_path: Path) -> None:

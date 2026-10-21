@@ -9,10 +9,13 @@ import type { ComponentType } from "react";
 import { Navigate, type LazyRouteFunction, type RouteObject } from "react-router";
 
 import { RequireAdmin, RequireSession } from "./admin/guards";
+import { RouteError } from "./RouteError";
+import { loadChunk } from "./staleChunks";
 
-// A route whose component is the named export of a lazily imported module.
+// A route whose component is the named export of a lazily imported module. A chunk the
+// current deploy no longer has reloads the page once (staleChunks.ts).
 function page<M>(load: () => Promise<M>, pick: (module: M) => ComponentType): LazyRouteFunction<RouteObject> {
-  return async () => ({ Component: pick(await load()) });
+  return async () => ({ Component: pick(await loadChunk(load)) });
 }
 
 function Loading() {
@@ -23,6 +26,8 @@ export const routes: RouteObject[] = [
   {
     // Shown while the first page's chunk loads.
     HydrateFallback: Loading,
+    // Any error below, instead of React Router's developer screen.
+    ErrorBoundary: RouteError,
     children: [
       { path: "/demo/*", lazy: page(() => import("./demo/DemoPage"), (m) => m.DemoPage) },
       { path: "/admin/login", lazy: page(() => import("./admin/LoginPage"), (m) => m.LoginPage) },

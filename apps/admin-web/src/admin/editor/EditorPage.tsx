@@ -9,6 +9,7 @@ import { Link, useBlocker, useParams } from "react-router";
 
 import { client, csrf, unwrap } from "../../api/client";
 import { useCall } from "../../call/useCall";
+import { loadChunk } from "../../staleChunks";
 import { useBot } from "../bots/queries";
 import { formatTime } from "../format";
 import { useCanEdit, useCurrentSession } from "../session";
@@ -16,7 +17,7 @@ import { Button, ErrorText } from "../ui";
 import { Canvas, PALETTE_MIME } from "./Canvas";
 import { ISSUE_TEXT, LAYOUT, NODE_KINDS, PALETTE, toFlowGraph, type FlowIssue, type NodeType } from "./graph";
 // The forms bring zod and React Hook Form; they load when a node is first selected.
-const NodeForm = lazy(() => import("./NodeForm").then((m) => ({ default: m.NodeForm })));
+const NodeForm = lazy(() => loadChunk(() => import("./NodeForm")).then((m) => ({ default: m.NodeForm })));
 import { selectDirty, useEditor } from "./store";
 import { TestConsole } from "./TestConsole";
 
