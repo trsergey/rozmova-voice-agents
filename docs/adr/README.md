@@ -13,7 +13,7 @@ the SDD ("Рішення для ADR і перевірені факти").
 | [0006](0006-flow-as-json-graph.md) | Flow as a JSON graph in JSONB, immutable versions, JSONLogic | Accepted |
 | [0007](0007-deepeval-plus-deterministic-checks.md) | DeepEval plus deterministic checks | Accepted |
 | [0008](0008-railway-demo-vps-compose.md) | Demo on Railway, production variant on a VPS | Accepted |
-| [0009](0009-llm-model-choice.md) | Primary and fallback LLM chosen by evals | Proposed |
+| [0009](0009-llm-model-choice.md) | Primary and fallback LLM chosen by evals | Accepted |
 | [0010](0010-demo-access-codes-and-signed-tickets.md) | Demo access codes plus signed WebSocket tickets | Accepted |
 | [0011](0011-engine-as-shared-package.md) | Dialogue engine as a shared package | Accepted |
 | [0012](0012-single-draft-immutable-versions.md) | One in-place draft, versions on publish, rollback copies | Accepted |

@@ -9,6 +9,7 @@ every summary metric meets ``evals/thresholds.yaml``. The JSON shape is the
 """
 
 import asyncio
+import statistics
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -123,6 +124,11 @@ class Summary(_Model):
     output_tokens: int
     judge_cost_usd: float | None
     judge_errors: int
+    # End-to-end TTFT over turns that called the LLM, as on the "Операції" page (ROZ-91).
+    # Defaults keep reports stored before ROZ-72 readable.
+    llm_turns: int = 0
+    ttft_p50_ms: float | None = None
+    ttft_p95_ms: float | None = None
 
 
 class EvalReport(_Model):
@@ -274,6 +280,12 @@ def build_report(
             entry.cases += 1
             entry.passed += case.passed
 
+    ttfts = [
+        turn.timings.ttft_ms
+        for run in runs
+        for turn in run.turns
+        if turn.timings and turn.timings.ttft_ms is not None and "llm_ttft" in turn.timings.stages
+    ]
     summary = Summary(
         passed=all(gate.passed for gate in gates),
         cases=len(cases),
@@ -284,6 +296,9 @@ def build_report(
         output_tokens=sum(run.usage.output_tokens for run in runs),
         judge_cost_usd=None if judge_cost_usd is None else round(judge_cost_usd, 4),
         judge_errors=judge_errors,
+        llm_turns=len(ttfts),
+        ttft_p50_ms=_percentile(ttfts, 0.5),
+        ttft_p95_ms=_percentile(ttfts, 0.95),
     )
     return EvalReport(
         started_at=started_at,
@@ -326,6 +341,14 @@ def _share(flags: Sequence[bool]) -> float | None:
     return sum(flags) / len(flags) if flags else None
 
 
+def _percentile(values: Sequence[float], q: float) -> float | None:
+    """Linear interpolation between closest ranks, like PostgreSQL ``percentile_cont``."""
+    if len(values) < 2:
+        return round(values[0], 1) if values else None
+    cuts = statistics.quantiles(values, n=100, method="inclusive")
+    return round(cuts[round(q * 100) - 1], 1)
+
+
 def _mean(values: Sequence[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
@@ -347,6 +370,11 @@ def render_markdown(report: EvalReport) -> str:
         f"- {report.started_at:%Y-%m-%d %H:%M} UTC, "
         f"{(report.finished_at - report.started_at).total_seconds():.0f} s",
     ]
+    if s.ttft_p50_ms is not None and s.ttft_p95_ms is not None:
+        lines.append(
+            f"- TTFT over {s.llm_turns} LLM turns: p50 {s.ttft_p50_ms:.0f} ms, "
+            f"p95 {s.ttft_p95_ms:.0f} ms"
+        )
     if s.judge_errors:
         lines.append(f"- Judge errors: {s.judge_errors} turn(s) not scored")
     lines += ["", "| Metric | Value | Threshold | |", "| --- | --- | --- | --- |"]

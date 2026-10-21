@@ -80,6 +80,12 @@ It writes `evals/reports/eval_report-<time>.json` (the `eval_report` the admin A
 `.md`, prints the Markdown and exits 1 when a threshold is not met. A full run with
 `gpt-4.1-mini` takes about 100 s and costs about $0.10 for the judge.
 
+The summary also gives TTFT p50/p95 over the turns that called the LLM. To compare models
+(ADR 0009), run one case at a time so parallel requests do not inflate it:
+`make eval args="--no-judge --concurrency 1 --provider anthropic --model claude-haiku-5-5"`.
+Laptop numbers include the round trip to the provider; compare them with each other, not
+with the dev "Операції" page.
+
 ## In CI
 
 `.github/workflows/eval.yml` runs the same runner on a fresh PostgreSQL with `kb/` ingested:

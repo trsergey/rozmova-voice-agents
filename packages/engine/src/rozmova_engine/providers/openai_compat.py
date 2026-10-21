@@ -8,6 +8,9 @@ policy instead. Behaviour worth knowing:
   servers that do not send it produce no ``Usage`` event;
 - tool-call fragments are assembled per call index and emitted as complete ``ToolCall``
   events after the text, once the stream has ended;
+- GPT-5 and GPT-6 models get ``reasoning_effort="none"``: some reason by default, which
+  costs first-token latency (ADR 0009); older models reject the parameter, and Azure
+  deployment names do not match the prefixes, so they get the old request;
 - tool-call arguments that are not a JSON object fail the attempt with
   ``ProviderError(retryable=True)``: before the first event that is retried like any
   transient failure, after it the gateway reports a retryable ``error``.
@@ -16,6 +19,7 @@ policy instead. Behaviour worth knowing:
 import json
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx2
 from openai import (
@@ -52,6 +56,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_TIMEOUT_S = 60.0
 
 _RETRYABLE_STATUS = frozenset({408, 409, 429})
+_REASONING_MODEL_PREFIXES = ("gpt-5", "gpt-6")
 
 
 class OpenAICompatibleProvider:
@@ -82,21 +87,16 @@ class OpenAICompatibleProvider:
     ) -> AsyncGenerator[StreamEvent]:
         try:
             # The API rejects an empty tools list, so it is only sent when non-empty.
-            if tools:
-                response = await self._client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    tools=tools,
-                    stream=True,
-                    stream_options={"include_usage": True},
-                )
-            else:
-                response = await self._client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    stream=True,
-                    stream_options={"include_usage": True},
-                )
+            extra: dict[str, Any] = {"tools": tools} if tools else {}
+            if model.startswith(_REASONING_MODEL_PREFIXES):
+                extra["reasoning_effort"] = "none"
+            response = await self._client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+                stream_options={"include_usage": True},
+                **extra,
+            )
             async with response as chunks:
                 calls: dict[int, _PartialCall] = {}
                 usage: Usage | None = None

@@ -12,12 +12,13 @@ deterministic:
   completed_runs: 1.0          # runs that did not break (timeout, provider error)
 
 # Mean judge scores (0..1). A single turn below the value fails its case. Margins allow
-# for judge noise; tune them on the model comparison (ROZ-72).
+# for judge noise. Kept after the model comparison (ROZ-72, ADR 0009): the passing models
+# scored relevancy 0.78–0.86, faithfulness 0.94–1.00, correctness 0.76–0.83.
 judge:
   # 0.6, not 0.7: DeepEval scores every sentence, and the closing offer the prompt asks for
   # («Чим ще можу допомогти?») counts as irrelevant. Over six full runs on 2026-10-15 the
   # mean ranged 0.67–0.79 with the same bot behaviour, so 0.7 flapped; truly off answers
-  # score ~0.2–0.3. Revisit with the model comparison (ROZ-72).
+  # score ~0.2–0.3.
   answer_relevancy: 0.6
   faithfulness: 0.8
   correctness: 0.6

@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from rozmova_contracts import protocol
 from rozmova_contracts.flow import FlowGraph
 from rozmova_engine.evals.cases import EvalCase
 from rozmova_engine.evals.checks import check_run
@@ -361,6 +362,66 @@ async def test_judge_errors_are_counted_not_raised() -> None:
 
     assert errors == ["broken#0"]
     assert scores["broken"] == [None]
+
+
+def test_report_ttft_percentiles_count_only_llm_turns() -> None:
+    def turn(ttft: float, stages: dict[str, float]) -> TurnRecord:
+        timings = protocol.TurnTimings(total_ms=ttft, ttft_ms=ttft, stages=stages)
+        return TurnRecord(user="u", reply="r", timings=timings)
+
+    run = CaseRun(
+        case=case(id="t", turns=[{"user": "u", "reference": "x"}] * 4),
+        turns=[
+            turn(1000, {"llm_ttft": 990}),
+            turn(2000, {"llm_ttft": 1990}),
+            turn(3000, {"llm_ttft": 2990, "rag_search": 700}),
+            # A scripted node reply without the LLM would pull the percentiles down.
+            turn(5, {}),
+        ],
+    )
+    now = datetime.now(UTC)
+
+    report = build_report(
+        [run],
+        {},
+        THRESHOLDS,
+        started_at=now,
+        finished_at=now,
+        flow="flows/hvylia-demo.json",
+        provider="openai",
+        model="gpt-4.1-mini",
+        judge_model=None,
+        judge_cost_usd=None,
+        judge_errors=0,
+        subset="full",
+    )
+
+    summary = report.summary
+    assert summary.llm_turns == 3
+    assert summary.ttft_p50_ms == 2000
+    assert summary.ttft_p95_ms == 2900
+    assert "TTFT over 3 LLM turns: p50 2000 ms, p95 2900 ms" in render_markdown(report)
+
+
+def test_report_without_llm_turns_has_no_ttft() -> None:
+    now = datetime.now(UTC)
+    report = build_report(
+        [_run(case(id="t", turns=[{"user": "u", "reference": "x"}]), "r")],
+        {},
+        THRESHOLDS,
+        started_at=now,
+        finished_at=now,
+        flow="f",
+        provider="openai",
+        model="m",
+        judge_model=None,
+        judge_cost_usd=None,
+        judge_errors=0,
+        subset="full",
+    )
+
+    assert (report.summary.ttft_p50_ms, report.summary.ttft_p95_ms) == (None, None)
+    assert "TTFT" not in render_markdown(report)
 
 
 def test_repo_thresholds_load() -> None:

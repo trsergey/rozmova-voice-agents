@@ -99,9 +99,10 @@ async def collect(
     messages: list[Message] | None = None,
     tools: list[ToolSpec] | None = None,
     received: list[StreamEvent] | None = None,
+    model: str = "gpt-4.1-mini",
 ) -> list[StreamEvent]:
     events = received if received is not None else []
-    stream = provider.stream(messages or [USER], tools or [], model="gpt-4.1-mini")
+    stream = provider.stream(messages or [USER], tools or [], model=model)
     async with aclosing(stream) as events_stream:
         async for event in events_stream:
             events.append(event)
@@ -124,6 +125,14 @@ async def test_text_stream_maps_to_deltas_then_usage() -> None:
     assert body["stream_options"] == {"include_usage": True}
     assert body["model"] == "gpt-4.1-mini"
     assert "tools" not in body  # an empty tools list is rejected by the API
+    assert "reasoning_effort" not in body  # gpt-4.1 rejects it
+
+
+@pytest.mark.parametrize("model", ["gpt-5.4-mini", "gpt-6-luna"])
+async def test_newer_models_are_asked_not_to_reason(model: str) -> None:
+    server = Server(sse(fixture("text.sse")))
+    await collect(make_provider(server), model=model)
+    assert server.body()["reasoning_effort"] == "none"
 
 
 async def test_tool_call_fragments_are_assembled_per_call() -> None:
