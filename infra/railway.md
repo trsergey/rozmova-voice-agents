@@ -136,3 +136,22 @@ Expected: `session_started`, the greeting as `assistant_delta`, `turn_end`; `han
 Checked on 2026-10-15 with images `d3fac9e`: greeting after ~0.5 s from Kyiv, including
 the TLS handshake. `python -m gateway.devticket` inside the gateway container
 (`railway ssh -s gateway -e dev`) still prints a ticket without the admin API.
+
+## Resetting the demo
+
+Before a demo or a review, an admin clears the demo on the **Операції** page
+(`/admin/ops`, block «Скидання демо»). The three buttons are independent: each clears one
+area and leaves the others alone. Each asks for a second click.
+
+| Button | Clears | Keeps |
+| --- | --- | --- |
+| Дзвінки | every call and its events (`POST /ops/reset/calls`) | bots, versions, access codes |
+| Демо-бот | the demo bot's draft, name, provider and model back to `flows/hvylia-demo.json`; the seed is published as a new version if another one is live (`POST /ops/reset/demo-bot`) | version history (ADR 0012), the bot's provider key, other bots, calls |
+| Сесії | reconnect state in Redis, `session:*` (`POST /ops/reset/sessions`) | calls in progress, which only cannot be resumed after a drop |
+
+The mock billing needs no reset: the gateway gives every call a fresh fictional account,
+so a service one visitor activates never shows up in another visitor's call.
+
+Check after a reset: the calls page is empty, the demo bot page shows the seed version
+live («в ефірі») with the note `reset to the seed flow`, and a new call in `/demo/`
+starts with the seed greeting. The admin API logs `demo_reset` with the area and counts.

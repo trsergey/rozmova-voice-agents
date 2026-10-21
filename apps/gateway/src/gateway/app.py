@@ -100,8 +100,14 @@ def create_app(
     allowed_origins = frozenset(settings.allowed_origins)
 
     limiter = RateLimiter(redis, settings)
-    billing = MockBilling(demo_subscribers())
-    registry = ToolRegistry([*subscriber_tools(billing), *(knowledge_tools(kb) if kb else [])])
+
+    def call_tools() -> ToolRegistry:
+        """Tools for one call. The mock billing is per call, so every visitor starts from
+        the same fictional account and one visitor's activation never shows up in another's
+        call (ROZ-45). A reconnect gets a fresh one too: the demo has no billing to resume."""
+        billing = MockBilling(demo_subscribers())
+        return ToolRegistry([*subscriber_tools(billing), *(knowledge_tools(kb) if kb else [])])
+
     events = CallEventWriter(redis)
 
     @asynccontextmanager
@@ -256,6 +262,7 @@ def create_app(
         async def emit(event: protocol.ProtocolMessage) -> None:
             await session.emit(event)
 
+        registry = call_tools()
         loop = ToolLoop(
             bot.provider, bot.model, registry, ctx, emit, provider_name=bot.provider_name
         )

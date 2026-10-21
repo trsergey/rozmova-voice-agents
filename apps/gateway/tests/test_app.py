@@ -132,6 +132,47 @@ def test_healthz(gateway: Gateway) -> None:
         assert http.get("/healthz").json() == {"status": "ok"}
 
 
+def test_every_call_starts_from_a_fresh_mock_billing() -> None:
+    activate = ToolCall(id="a", name="activate_service", arguments={"service_id": "roaming_eu"})
+    provider = FakeProvider(
+        [
+            [activate],
+            text_turn("Роумінг Європа — 99 грн. Підключити?"),
+            [activate],
+            text_turn("Готово."),
+            [ToolCall(id="l", name="list_services")],
+            text_turn("Ось послуги."),
+        ]
+    )
+    gateway = Gateway(StaticBotLoader(FLOW, provider, "gpt-4.1-mini"))
+    bot_id = uuid4()
+
+    def results(ws: Any, *utterances: str) -> list[dict[str, Any]]:
+        until_turn_end(ws)  # the greeting
+        found = []
+        for text in utterances:
+            ws.send_json({"type": "user_text", "text": text})
+            found += [e["result"] for e in until_turn_end(ws) if e["type"] == "tool_result"]
+        return found
+
+    with TestClient(gateway.app) as http:
+        first = uuid4()
+        with http.websocket_connect(
+            url(bot_id, first, gateway.ticket(bot_id, first, debug=True))
+        ) as ws:
+            ws.receive_json()
+            assert results(ws, "підключіть роумінг Європа", "так")[-1]["status"] == "activated"
+        second = uuid4()
+        with http.websocket_connect(
+            url(bot_id, second, gateway.ticket(bot_id, second, debug=True))
+        ) as ws:
+            ws.receive_json()
+            [services] = results(ws, "які в мене послуги")
+
+    # The first visitor's activation stayed in the first call.
+    assert "roaming_eu" not in [s["id"] for s in services["active"]]
+
+
 def test_call_with_a_ticket(gateway: Gateway) -> None:
     bot_id, call_id = uuid4(), uuid4()
     path = url(bot_id, call_id, gateway.ticket(bot_id, call_id))

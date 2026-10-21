@@ -499,6 +499,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ops/reset/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Calls */
+        post: operations["reset_calls_ops_reset_calls_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ops/reset/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Sessions */
+        post: operations["reset_sessions_ops_reset_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ops/reset/demo-bot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Demo Bot */
+        post: operations["reset_demo_bot_ops_reset_demo_bot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -745,6 +796,18 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** Deleted */
+        Deleted: {
+            /** Deleted */
+            deleted: number;
+        };
+        /** DemoBotReset */
+        DemoBotReset: {
+            /** Live Version */
+            live_version: number;
+            /** Republished */
+            republished: boolean;
         };
         /** DraftOut */
         DraftOut: {
@@ -2349,6 +2412,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpsSummary"];
+                };
+            };
+        };
+    };
+    reset_calls_ops_reset_calls_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deleted"];
+                };
+            };
+        };
+    };
+    reset_sessions_ops_reset_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deleted"];
+                };
+            };
+        };
+    };
+    reset_demo_bot_ops_reset_demo_bot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoBotReset"];
                 };
             };
         };

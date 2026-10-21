@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { client, unwrap, type Schemas } from "../../api/client";
 import { formatMs, formatTime } from "../format";
 import { Card, ErrorText, PageHeader } from "../ui";
+import { DemoReset } from "./DemoReset";
 
 type Window = Schemas["WindowStats"];
 
@@ -54,6 +55,9 @@ export function OpsPage() {
           ))}
         </div>
       )}
+      <div className="mt-6">
+        <DemoReset />
+      </div>
     </>
   );
 }

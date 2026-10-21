@@ -38,6 +38,15 @@ REPUBLISHED_NOTE = "seed: flows/hvylia-demo.json changed"
 log = structlog.get_logger(__name__)
 
 
+def load_demo_flow(settings: Settings) -> FlowGraph:
+    """``flows/hvylia-demo.json``, validated against the tools the gateway has."""
+    flow = FlowGraph.model_validate_json(settings.demo_flow_path.read_text(encoding="utf-8"))
+    result = validate_flow(flow, KNOWN_TOOLS)
+    if not result.ok:
+        raise RuntimeError(f"{settings.demo_flow_path} is invalid: {result.errors}")
+    return flow
+
+
 async def seed_admin(settings: Settings, factory: async_sessionmaker[AsyncSession]) -> None:
     if settings.admin_email is None or settings.admin_password is None:
         log.warning("admin_seed_skipped", reason="ROZMOVA_ADMIN_EMAIL or _PASSWORD unset")
@@ -72,11 +81,8 @@ async def seed_demo_bot(
 ) -> None:
     if not settings.demo_seed:
         return
-    flow = FlowGraph.model_validate_json(settings.demo_flow_path.read_text(encoding="utf-8"))
-    result = validate_flow(flow, KNOWN_TOOLS)
-    if not result.ok:
-        # A broken flow file is a bug in the repo; fail the start, not the first call.
-        raise RuntimeError(f"{settings.demo_flow_path} is invalid: {result.errors}")
+    # A broken flow file is a bug in the repo; fail the start, not the first call.
+    flow = load_demo_flow(settings)
 
     try:
         async with factory() as db, db.begin():

@@ -18,6 +18,7 @@ from admin_api import (
     call_history,
     calls,
     credentials,
+    demo_reset,
     errors,
     evals,
     kb,
@@ -88,6 +89,7 @@ def create_app(
     app.include_router(credentials.router)
     app.include_router(kb.router)
     app.include_router(ops.router)
+    app.include_router(demo_reset.router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

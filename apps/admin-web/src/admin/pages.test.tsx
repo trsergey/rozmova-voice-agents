@@ -144,6 +144,58 @@ test("unknown active calls are not shown as zero", async () => {
   expect(screen.getByText("Redis не відповідає")).toBeInTheDocument();
 });
 
+const EMPTY_SUMMARY = ok({ generated_at: "2026-10-19T10:00:00Z", active_calls: 0, windows: [] });
+
+test("an admin resets one demo area after confirming", async () => {
+  const requests = fakeApi({
+    ...as(ADMIN),
+    "GET /ops/summary": EMPTY_SUMMARY,
+    "POST /ops/reset/calls": ok({ deleted: 43 }),
+    "POST /ops/reset/demo-bot": ok({ live_version: 5, republished: true }),
+  });
+  open("/admin/ops");
+  const user = userEvent.setup();
+
+  const calls = await screen.findByRole("listitem", { name: "Дзвінки" });
+  await user.click(within(calls).getByRole("button", { name: "Скинути: дзвінки" }));
+  // Nothing is sent before the second click.
+  expect(requests.filter((r) => r.key.startsWith("POST"))).toEqual([]);
+  await user.click(within(calls).getByRole("button", { name: "Так, скинути" }));
+  expect(await within(calls).findByRole("status")).toHaveTextContent("Видалено дзвінків: 43");
+
+  const bot = screen.getByRole("listitem", { name: "Демо-бот" });
+  await user.click(within(bot).getByRole("button", { name: "Скинути: демо-бот" }));
+  await user.click(within(bot).getByRole("button", { name: "Так, скинути" }));
+  expect(await within(bot).findByRole("status")).toHaveTextContent("Seed опубліковано як v5");
+
+  const posts = requests.filter((r) => r.key.startsWith("POST"));
+  expect(posts.map((r) => [r.key, r.csrf])).toEqual([
+    ["POST /ops/reset/calls", "csrf-admin"],
+    ["POST /ops/reset/demo-bot", "csrf-admin"],
+  ]);
+});
+
+test("cancel keeps the area as it is", async () => {
+  const requests = fakeApi({ ...as(ADMIN), "GET /ops/summary": EMPTY_SUMMARY });
+  open("/admin/ops");
+  const user = userEvent.setup();
+
+  const sessions = await screen.findByRole("listitem", { name: "Сесії" });
+  await user.click(within(sessions).getByRole("button", { name: "Скинути: сесії" }));
+  await user.click(within(sessions).getByRole("button", { name: "Скасувати" }));
+
+  expect(within(sessions).getByRole("button", { name: "Скинути: сесії" })).toBeInTheDocument();
+  expect(requests.filter((r) => r.key.startsWith("POST"))).toEqual([]);
+});
+
+test("viewers do not see the demo reset", async () => {
+  fakeApi({ ...as(VIEWER), "GET /ops/summary": EMPTY_SUMMARY });
+  open("/admin/ops");
+
+  await screen.findByLabelText("Активних дзвінків");
+  expect(screen.queryByText("Скидання демо")).not.toBeInTheDocument();
+});
+
 // --- access codes --------------------------------------------------------------------------
 
 const CODE = {

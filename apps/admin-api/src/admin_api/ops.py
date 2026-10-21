@@ -169,6 +169,10 @@ class SummaryCache:
                 self._expires = time.monotonic() + CACHE_SECONDS
             return self._value
 
+    def clear(self) -> None:
+        """Drop the cached summary, e.g. after the calls were reset."""
+        self._value = None
+
 
 router = APIRouter(prefix="/ops", tags=["ops"], dependencies=[Depends(current_session)])
 

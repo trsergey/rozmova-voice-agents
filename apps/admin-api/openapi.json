@@ -1338,6 +1338,69 @@
         }
       }
     },
+    "/ops/reset/calls": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Reset Calls",
+        "operationId": "reset_calls_ops_reset_calls_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ops/reset/sessions": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Reset Sessions",
+        "operationId": "reset_sessions_ops_reset_sessions_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ops/reset/demo-bot": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Reset Demo Bot",
+        "operationId": "reset_demo_bot_ops_reset_demo_bot_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoBotReset"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -1963,6 +2026,37 @@
           "created_at"
         ],
         "title": "CredentialOut"
+      },
+      "Deleted": {
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "Deleted"
+      },
+      "DemoBotReset": {
+        "properties": {
+          "live_version": {
+            "type": "integer",
+            "title": "Live Version"
+          },
+          "republished": {
+            "type": "boolean",
+            "title": "Republished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "live_version",
+          "republished"
+        ],
+        "title": "DemoBotReset"
       },
       "DraftOut": {
         "properties": {
