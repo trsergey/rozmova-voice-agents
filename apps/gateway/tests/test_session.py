@@ -199,7 +199,7 @@ async def test_turn_streams_text_and_ends_with_timings() -> None:
     turn = sent[3:]
     assert {e["type"] for e in turn} == {"assistant_delta", "turn_end"}
     assert "".join(e["text"] for e in turn if e["type"] == "assistant_delta") == (
-        "На рахунку 120,50 грн."
+        "Хвилинку, перевіряю баланс. На рахунку 120,50 грн."
     )
     timings = turn[-1]["timings"]
     assert turn[-1]["turn_id"] == 2
@@ -783,7 +783,11 @@ async def test_a_viewers_call_is_recorded_with_the_debug_events_they_do_not_get(
     assert recorded[2][1]["text"].startswith("Вітаю!")
     assert recorded[4][1] == {"text": "скільки в мене грошей"}
     assert recorded[6][1] == {"turn_id": 2, "name": "get_balance", "args": {}}
-    assert recorded[8][1] == {"turn_id": 2, "text": "На рахунку 120,50 грн.", "interrupted": False}
+    assert recorded[8][1] == {
+        "turn_id": 2,
+        "text": "Хвилинку, перевіряю баланс. На рахунку 120,50 грн.",
+        "interrupted": False,
+    }
     assert recorded[10][1] == {"reason": "hangup"}
     assert recorded[11][1] == {"code": 1000, "resumable": False}
     assert {e.call_id for e in events.events} == {call.session.call_id}

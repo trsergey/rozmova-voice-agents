@@ -137,7 +137,9 @@ def test_call_with_a_ticket(gateway: Gateway) -> None:
     path = url(bot_id, call_id, gateway.ticket(bot_id, call_id))
     with TestClient(gateway.app) as http, http.websocket_connect(path) as ws:
         events = run_balance_call(ws, call_id)
-    assert "".join(e["text"] for e in events if e["type"] == "assistant_delta") == "120,50 грн."
+    assert "".join(e["text"] for e in events if e["type"] == "assistant_delta") == (
+        "Хвилинку, перевіряю баланс. 120,50 грн."
+    )
     assert "tool_call" not in [e["type"] for e in events]  # not a debug ticket
 
 

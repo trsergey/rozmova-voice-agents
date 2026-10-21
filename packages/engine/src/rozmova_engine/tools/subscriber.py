@@ -175,18 +175,21 @@ def subscriber_tools(billing: MockBilling) -> list[Tool[Any]]:
             "Поточний баланс рахунку абонента в гривнях.",
             NoArgs,
             get_balance,
+            filler="Хвилинку, перевіряю баланс.",
         ),
         Tool(
             "get_current_tariff",
             "Тариф, на якому зараз абонент: код, назва й ціна.",
             NoArgs,
             get_current_tariff,
+            filler="Хвилинку, дивлюся ваш тариф.",
         ),
         Tool(
             "list_services",
             "Послуги абонента з цінами: підключені (`active`) і доступні (`available`).",
             NoArgs,
             list_services,
+            filler="Хвилинку, дивлюся послуги.",
         ),
         Tool(
             "activate_service",
@@ -197,5 +200,6 @@ def subscriber_tools(billing: MockBilling) -> list[Tool[Any]]:
             activate_service,
             side_effect=True,
             quote=quote_activation,
+            filler="Хвилинку.",
         ),
     ]

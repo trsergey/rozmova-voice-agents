@@ -145,7 +145,7 @@ async def test_a_published_bot_call_with_a_drop_and_a_resume(
             await ws.send(json.dumps({"type": "user_text", "text": "скільки в мене грошей"}))
             turn = await until(ws, "turn_end")
             reply = "".join(e["text"] for e in turn if e["type"] == "assistant_delta")
-            assert reply == "120,50 грн."
+            assert reply == "Хвилинку, перевіряю баланс. 120,50 грн."
             assert "tool_call" not in {e["type"] for e in turn}  # not a debug ticket
             ws.transport.abort()  # the network is gone: no close frame
             await asyncio.sleep(0.3)  # the server notices the dead connection
@@ -157,6 +157,7 @@ async def test_a_published_bot_call_with_a_drop_and_a_resume(
                 assert [m["text"] for m in started["history"]] == [
                     "Вітаю! Я асистент Hvylia Mobile. Чим можу допомогти?",
                     "скільки в мене грошей",
+                    "Хвилинку, перевіряю баланс.",
                     "120,50 грн.",
                 ]
                 await ws.send(json.dumps({"type": "hangup"}))

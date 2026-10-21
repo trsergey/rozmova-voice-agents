@@ -227,5 +227,6 @@ def knowledge_tools(
             ),
             args_model=SearchArgs,
             handler=search,
+            filler="Хвилинку, шукаю інформацію.",
         )
     ]

@@ -20,3 +20,4 @@ the SDD ("Рішення для ADR і перевірені факти").
 | [0013](0013-two-phase-confirmation-in-engine.md) | Two-phase confirmation enforced in engine code | Accepted, amended by 0015 |
 | [0014](0014-admin-sessions-in-redis.md) | Admin sessions as an opaque cookie backed by Redis | Accepted |
 | [0015](0015-consent-checked-in-code.md) | Consent to a quoted price also checked in code | Accepted |
+| [0016](0016-filler-phrase-before-tool-calls.md) | A filler phrase before tool calls | Accepted |

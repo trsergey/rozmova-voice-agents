@@ -89,7 +89,7 @@ async def test_expected_tool_call_passes() -> None:
 
     assert run.error is None
     [turn] = run.turns
-    assert turn.reply == "120,50 грн."
+    assert turn.reply == "Хвилинку, перевіряю баланс. 120,50 грн."
     assert [(t.name, t.result is not None) for t in turn.tools] == [("get_balance", True)]
     assert turn.timings is not None
     assert failed(run) == []

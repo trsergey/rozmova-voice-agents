@@ -72,27 +72,71 @@ async def run(h: Harness, timer: TurnTimer | None = None, **kwargs: Any) -> Any:
 # --- S1: tool round trip ---------------------------------------------------------------
 
 
+async def test_no_filler_when_the_llm_spoke_with_the_call() -> None:
+    h = Harness([TextDelta(text="Зараз гляну."), BALANCE], text_turn("120,50 грн."))
+    h.user_says("скільки в мене грошей")
+
+    result = await run(h)
+
+    assert result.text == "Зараз гляну. 120,50 грн."
+    assert "Хвилинку" not in result.text
+    assert h.provider.calls[1].messages[-2].content == "Зараз гляну."
+
+
+async def test_one_filler_per_turn() -> None:
+    tariff = ToolCall(id="c2", name="get_current_tariff")
+    h = Harness([BALANCE], [tariff], text_turn("120,50 грн, тариф Оптимум."))
+    h.user_says("баланс і тариф")
+    timer = TurnTimer()
+
+    result = await run(h, timer)
+
+    # The second tool round is not announced again: the subscriber already heard one.
+    assert result.text == "Хвилинку, перевіряю баланс. 120,50 грн, тариф Оптимум."
+    assert timer.to_timings().ttft_ms is not None
+
+
+async def test_no_filler_after_text_earlier_in_the_turn() -> None:
+    h = Harness([BALANCE], text_turn("120,50 грн."))
+    h.user_says("скільки в мене грошей")
+    timer = TurnTimer()
+    timer.first_text()  # e.g. a fixed greeting node spoke first
+
+    result = await run(h, timer)
+
+    assert result.text == "120,50 грн."
+
+
 async def test_tool_result_goes_back_to_the_llm_and_the_reply_is_streamed() -> None:
     h = Harness([BALANCE], text_turn("На рахунку 120,50 грн.", chunk_size=10))
     h.user_says("скільки в мене грошей")
 
     result = await run(h)
 
-    assert (result.outcome, result.text) == ("reply", "На рахунку 120,50 грн.")
+    # The filler goes out before the tool runs, so the wait for the second call is not silent.
+    assert (result.outcome, result.text) == (
+        "reply",
+        "Хвилинку, перевіряю баланс. На рахунку 120,50 грн.",
+    )
     assert h.types() == [
+        "assistant_delta",
         "tool_call",
         "tool_result",
         "assistant_delta",
         "assistant_delta",
         "assistant_delta",
     ]
-    assert h.events[1] == protocol.ToolResult(
+    assert h.events[0] == protocol.AssistantDelta(turn_id=1, text="Хвилинку, перевіряю баланс. ")
+    assert h.events[2] == protocol.ToolResult(
         turn_id=1, name="get_balance", result={"balance": "120.50", "currency": "грн"}
     )
 
     first, second = h.provider.calls
     assert [m.content for m in first.messages[:2]] == SYSTEM
     assert [spec.name for spec in first.tools] == ASSIST_TOOLS
+    # It is the text of the tool-call message, so the LLM knows it was said.
+    assert second.messages[-2].content == "Хвилинку, перевіряю баланс."
+    assert second.messages[-2].tool_calls
     tool_message = second.messages[-1]
     assert tool_message.role == "tool"
     assert tool_message.tool_call_id == "c1"

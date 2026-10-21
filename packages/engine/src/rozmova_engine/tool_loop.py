@@ -5,6 +5,11 @@ for a route, or runs out of iterations. Text is forwarded through ``emit`` as so
 arrives; tool calls go through ``call_tool``, so two-phase tools keep their confirmation
 rule. Everything the step adds to the conversation is appended to ``state.history``.
 
+When the model asks for tools and the subscriber has heard nothing yet this turn, the
+tool's filler phrase («Хвилинку, перевіряю баланс.») is sent before the tools run and
+kept as the text of that tool-call message, so the wait for the tool and the next LLM call
+is not silent (ROZ-94, ADR 0016). The step's ``text`` is everything it said.
+
 Cancellation (a new utterance, FR-4) can arrive at any await. The loop keeps the history
 valid for the next turn: text already streamed is stored as an ``interrupted`` reply, a
 side-effect tool that already started is finished under ``shield`` and its real result is
@@ -132,10 +137,13 @@ class ToolLoop:
             specs.append(route_spec(routes))
         prompts = [Message(role="system", content=text) for text in system]
         tokens_in = tokens_out = 0
+        said: list[str] = []
 
         for iteration in range(1, self._max_iterations + 1):
             messages = prompts + state.llm_messages()
             text, calls, usage = await self._call_llm(messages, specs, state, timer)
+            if text:
+                said.append(text)
             if usage is not None:
                 tokens_in += usage.input_tokens
                 tokens_out += usage.output_tokens
@@ -146,18 +154,28 @@ class ToolLoop:
                 # The route call is engine-internal: it is not kept in history, so the next
                 # node's LLM never sees a tool call without a result.
                 self._remember(state, Message(role="assistant", content=text))
-                return LoopResult("route", text, route=str(route.arguments["name"]), usage=total)
+                route_name = str(route.arguments["name"])
+                return LoopResult("route", " ".join(said), route=route_name, usage=total)
 
             if not calls:
                 self._remember(state, Message(role="assistant", content=text))
-                return LoopResult("reply", text, usage=total)
+                return LoopResult("reply", " ".join(said), usage=total)
 
             if iteration == self._max_iterations:
                 self._remember(state, Message(role="assistant", content=text))
                 return LoopResult(
-                    "handoff", text, handoff_reason=HANDOFF_TOOL_LOOP_LIMIT, usage=total
+                    "handoff", " ".join(said), handoff_reason=HANDOFF_TOOL_LOOP_LIMIT, usage=total
                 )
 
+            if not text and not timer.spoke:
+                filler = self._registry.filler(call.name for call in calls)
+                if filler:
+                    timer.first_text()
+                    # The client joins deltas as they come; the space keeps the words apart.
+                    delta = protocol.AssistantDelta(turn_id=state.turn, text=f"{filler} ")
+                    await self._emit(delta)
+                    text = filler
+                    said.append(filler)
             self._remember(state, Message(role="assistant", content=text, tool_calls=tuple(calls)))
             await self._run_tools(calls, state, timer)
 

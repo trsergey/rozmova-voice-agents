@@ -147,8 +147,8 @@ async def test_walkthrough_start_s1_s2_s3_s4() -> None:
 
     # S1: assist → get_balance → reply
     s1 = await call.say("скільки в мене грошей")
-    assert s1.text == "На рахунку 120,50 грн."
-    assert call.types()[:3] == ["node_enter", "tool_call", "tool_result"]
+    assert s1.text == "Хвилинку, перевіряю баланс. На рахунку 120,50 грн."
+    assert call.types()[:4] == ["node_enter", "assistant_delta", "tool_call", "tool_result"]
     assert node(call) == "assist"
 
     # S2: route('tariff') → tariff_kb with the same utterance → cited answer → back to assist
@@ -171,7 +171,7 @@ async def test_walkthrough_start_s1_s2_s3_s4() -> None:
 
     # S3 step 2: «так» in the next turn activates
     s3 = await call.say("так")
-    assert s3.text == "Готово, послугу підключено."
+    assert s3.text == "Хвилинку. Готово, послугу підключено."
     assert "roaming_eu" in call.billing.find(DEMO_SUBSCRIBER_ID).services  # type: ignore[union-attr]
     assert pending(call) is None
 

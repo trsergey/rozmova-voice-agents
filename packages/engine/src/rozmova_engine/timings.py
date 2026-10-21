@@ -39,6 +39,11 @@ class TurnTimer:
         finally:
             self.add(name, (self._clock() - started) * 1000)
 
+    @property
+    def spoke(self) -> bool:
+        """Whether the subscriber has been sent any text this turn."""
+        return self._first_text is not None
+
     def first_text(self) -> None:
         """Mark the first text sent to the subscriber; later calls are ignored."""
         if self._first_text is None:

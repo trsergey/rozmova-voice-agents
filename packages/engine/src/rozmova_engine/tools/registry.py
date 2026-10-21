@@ -49,7 +49,8 @@ class Tool[A: BaseModel]:
     ``side_effect`` marks tools that change subscriber data; the gateway runs them under
     ``asyncio.shield()`` so a barge-in cannot cancel them halfway. ``quote`` makes the tool
     two-phase: it returns a ``Quote`` to confirm, or a final result when there is nothing to
-    confirm (unknown or already active service).
+    confirm (unknown or already active service). ``filler`` is said while the tool and the
+    next LLM call run, if the subscriber has heard nothing yet this turn (ADR 0016).
     """
 
     name: str
@@ -58,6 +59,7 @@ class Tool[A: BaseModel]:
     handler: Callable[[A, ToolContext], Awaitable[ToolResult]]
     side_effect: bool = False
     quote: Callable[[A, ToolContext], Awaitable[Quote | ToolResult]] | None = None
+    filler: str = ""
 
     @property
     def spec(self) -> ToolSpec:
@@ -115,6 +117,14 @@ class ToolRegistry:
         """Whether ``name`` changes subscriber data; false for unknown tools."""
         tool = self._tools.get(name)
         return tool is not None and tool.side_effect
+
+    def filler(self, names: Iterable[str]) -> str:
+        """The filler of the first called tool that has one; unknown tools have none."""
+        for name in names:
+            tool = self._tools.get(name)
+            if tool is not None and tool.filler:
+                return tool.filler
+        return ""
 
     def specs(self, names: Iterable[str]) -> list[ToolSpec]:
         """Specs for the tools a node allows, in the node's order."""
